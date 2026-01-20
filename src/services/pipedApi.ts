@@ -1,10 +1,16 @@
-// Piped API Service - Stable & Image Fix
+// Piped API Service - Headers Fix for Kavin
 // Docs: https://docs.piped.video/
 
-// Sử dụng server chính chủ giống web piped.video
+// Danh sách server - Ưu tiên Nhật Bản (gần VN nhất)
 const PIPED_INSTANCES = [
-    'https://api.piped.yt',
-    'https://pipedapi.kavin.rocks',
+    'https://ph.076.ne.jp',              // Japan -> Rất nhanh cho VN
+    'https://pipedapi.kavin.rocks',      // Ổn định
+    'https://pipedapi.adminforge.de',    // Germany
+    'https://piped-api.garudalinux.org', // India/Global
+    'https://api.piped.yt',              // Global
+    'https://pipedapi.drgns.space',      // US
+    'https://pipedapi.tokhmi.xyz',
+    'https://pipedapi.smnz.de',
 ];
 
 let currentInstance = PIPED_INSTANCES[0];
@@ -89,26 +95,50 @@ async function fetchWithFallback(endpoint: string): Promise<any> {
         try {
             console.log(`Connecting to: ${instance}...`);
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s
+            const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
 
+            // THÊM HEADERS ĐỂ FIX LỖI 500 TRÊN KAVIN.ROCKS
             const response = await fetch(`${instance}${endpoint}`, {
-                signal: controller.signal
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Origin': 'https://piped.video',
+                    'Referer': 'https://piped.video/'
+                }
             });
             clearTimeout(timeoutId);
 
             if (response.ok) {
                 const text = await response.text();
                 // Bỏ qua nếu trả về HTML lỗi
-                if (text.trim().startsWith('<')) continue;
+                if (text.trim().startsWith('<')) {
+                    console.log(`⚠️ HTML Error from ${instance}`);
+                    continue;
+                }
                 try {
                     const json = JSON.parse(text);
+
+                    // KIỂM TRA DỮ LIỆU CÓ HỢP LỆ KHÔNG?
+                    // Nếu đang lấy stream mà không có link video -> Coi như lỗi server này
+                    if (endpoint.includes('/streams/') && !json.hls && (!json.videoStreams || json.videoStreams.length === 0)) {
+                        console.log(`⚠️ Data Incomplete from ${instance} (No Streams)`);
+                        continue; // Thử server khác
+                    }
+
+                    console.log(`✅ DATA VALID: ${instance}`);
                     currentInstance = instance;
                     return json;
                 } catch (e) { continue; }
+            } else {
+                console.log(`⚠️ Error ${response.status}: ${instance}`);
             }
-        } catch (error) { console.log(`Error ${instance}`); }
+        } catch (error: any) {
+            console.log(`❌ Fail ${instance}:`, error.message);
+        }
     }
-    throw new Error('Mạng quá yếu hoặc tất cả server đều bận.');
+    throw new Error('Không thể tải dữ liệu. Vui lòng kiểm tra lại Wifi/4G hoặc thử lại sau.');
 }
 
 // API Functions
@@ -121,7 +151,6 @@ export const pipedApi = {
         if (data && data.items) {
             data.items.forEach((item: VideoItem) => {
                 if (!item.thumbnail.startsWith('http')) {
-                    // Nếu link ảnh tương đối, ghép với instance
                     item.thumbnail = item.thumbnail;
                 }
             });
@@ -143,7 +172,11 @@ export const pipedApi = {
 
     // Get trending videos
     getTrending: async (region: string = 'VN'): Promise<TrendingItem[]> => {
-        return fetchWithFallback(`/trending?region=${region}`);
+        try {
+            return await fetchWithFallback(`/trending?region=${region}`);
+        } catch (e) {
+            return await fetchWithFallback(`/trending?region=US`);
+        }
     },
 
     // Get channel info
@@ -194,10 +227,8 @@ export const pipedApi = {
     },
 
     getVideoUrl: (streamInfo: StreamInfo): string | undefined => {
-        // 1. Luôn ưu tiên HLS (m3u8) để chạy mượt
         if (streamInfo.hls) return streamInfo.hls;
 
-        // 2. Tìm mp4 có cả hình và tiếng
         const streams = streamInfo.videoStreams || [];
         const combinedStreams = streams.filter(s => !s.videoOnly);
 

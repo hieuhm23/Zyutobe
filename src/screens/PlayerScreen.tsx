@@ -105,21 +105,21 @@ const PlayerScreen = ({ route, navigation }: any) => {
     };
 
     const getStreamUrl = () => {
-        if (!streamInfo?.audioStreams && !streamInfo?.videoStreams) return null;
+        if (!streamInfo) return null;
 
         if (audioMode) {
             const audioStream = streamInfo.audioStreams?.find(s => s.mimeType === 'audio/mp4') || streamInfo.audioStreams?.[0];
             return audioStream?.url;
         }
 
-        const videoStream = streamInfo.videoStreams?.find(s => s.quality === '1080p' || s.quality === '720p') || streamInfo.videoStreams?.[0];
-
-        if (streamInfo.hls) return streamInfo.hls;
-
-        return videoStream?.url;
+        // Sử dụng hàm chuẩn từ API service để đảm bảo logic ưu tiên HLS
+        return pipedApi.getVideoUrl(streamInfo);
     };
 
     const playUrl = getStreamUrl();
+
+    // Debug URL để xem nó lấy link gì
+    console.log('Playing URL:', playUrl);
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -145,6 +145,11 @@ const PlayerScreen = ({ route, navigation }: any) => {
                             posterSource={{ uri: streamInfo?.thumbnailUrl || video?.thumbnail }}
                             posterStyle={{ resizeMode: 'cover' }}
                             usePoster={true}
+                            onError={(error) => {
+                                console.log("Video Error:", error);
+                                Alert.alert("Lỗi Video", "Không thể phát video này. Code: " + error);
+                            }}
+                            onLoad={() => console.log("Video Loaded Successfully")}
                         />
                         <TouchableOpacity
                             onPress={() => navigation.goBack()}
