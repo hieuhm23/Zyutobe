@@ -1,16 +1,10 @@
-// Piped API Service - YouTube Alternative API
+// Piped API Service - Stable & Image Fix
 // Docs: https://docs.piped.video/
 
-// Danh sách server được chọn lọc kỹ cho Mobile
+// Sử dụng server chính chủ giống web piped.video
 const PIPED_INSTANCES = [
-    'https://pipedapi.kavin.rocks', // Main - Thường ổn định nhất
-    'https://api.piped.yt',         // Official
-    'https://pipedapi.tokhmi.xyz',  // Ít bị chặn
-    'https://pipedapi.soopy.moe',
-    'https://pipedapi.moomoo.me',
-    'https://pipedapi.syncpundit.io',
-    'https://piped-api.lunar.icu',
-    'https://pa.il.ax',
+    'https://api.piped.yt',
+    'https://pipedapi.kavin.rocks',
 ];
 
 let currentInstance = PIPED_INSTANCES[0];
@@ -93,34 +87,28 @@ async function fetchWithFallback(endpoint: string): Promise<any> {
 
     for (const instance of instancesToTry) {
         try {
-            console.log(`Trying: ${instance}${endpoint}`);
-
+            console.log(`Connecting to: ${instance}...`);
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s
 
             const response = await fetch(`${instance}${endpoint}`, {
-                signal: controller.signal,
-                headers: {
-                    'Accept': 'application/json',
-                    // User-Agent giả lập iPhone thật để server tin tưởng
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-                }
+                signal: controller.signal
             });
-
             clearTimeout(timeoutId);
 
             if (response.ok) {
-                console.log(`✅ Success: ${instance}`);
-                currentInstance = instance;
-                return await response.json();
-            } else {
-                console.log(`⚠️ Error ${response.status} from ${instance}`);
+                const text = await response.text();
+                // Bỏ qua nếu trả về HTML lỗi
+                if (text.trim().startsWith('<')) continue;
+                try {
+                    const json = JSON.parse(text);
+                    currentInstance = instance;
+                    return json;
+                } catch (e) { continue; }
             }
-        } catch (error: any) {
-            console.log(`❌ Fail ${instance}: ${error.message}`);
-        }
+        } catch (error) { console.log(`Error ${instance}`); }
     }
-    throw new Error('Không thể kết nối đến server video nào. Vui lòng kiểm tra mạng của bạn.');
+    throw new Error('Mạng quá yếu hoặc tất cả server đều bận.');
 }
 
 // API Functions
@@ -128,7 +116,17 @@ export const pipedApi = {
     // Search videos
     search: async (query: string, filter: string = 'videos'): Promise<SearchResult> => {
         const encoded = encodeURIComponent(query);
-        return fetchWithFallback(`/search?q=${encoded}&filter=${filter}`);
+        const data = await fetchWithFallback(`/search?q=${encoded}&filter=${filter}`);
+        // Fix ảnh thumbnail trực tiếp từ kết quả search
+        if (data && data.items) {
+            data.items.forEach((item: VideoItem) => {
+                if (!item.thumbnail.startsWith('http')) {
+                    // Nếu link ảnh tương đối, ghép với instance
+                    item.thumbnail = item.thumbnail;
+                }
+            });
+        }
+        return data;
     },
 
     // Search next page
@@ -179,7 +177,6 @@ export const pipedApi = {
         return null;
     },
 
-    // Helper: Format duration
     formatDuration: (seconds: number): string => {
         if (seconds < 0) return 'LIVE';
         const hrs = Math.floor(seconds / 3600);
@@ -189,12 +186,26 @@ export const pipedApi = {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     },
 
-    // Helper: Format view count
     formatViews: (views: number): string => {
         if (views >= 1000000000) return (views / 1000000000).toFixed(1) + 'B';
         if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
         if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
         return views.toString();
+    },
+
+    getVideoUrl: (streamInfo: StreamInfo): string | undefined => {
+        // 1. Luôn ưu tiên HLS (m3u8) để chạy mượt
+        if (streamInfo.hls) return streamInfo.hls;
+
+        // 2. Tìm mp4 có cả hình và tiếng
+        const streams = streamInfo.videoStreams || [];
+        const combinedStreams = streams.filter(s => !s.videoOnly);
+
+        if (combinedStreams.length > 0) {
+            return combinedStreams.sort((a, b) => (b.height || 0) - (a.height || 0))[0]?.url;
+        }
+
+        return streams[0]?.url;
     },
 
     getCurrentInstance: (): string => currentInstance,

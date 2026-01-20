@@ -139,7 +139,11 @@ const HomeScreen = ({ navigation }: any) => {
 
             <View style={styles.header}>
                 <View style={styles.logoRow}>
-                    <MaterialCommunityIcons name="youtube" size={32} color={COLORS.primary} />
+                    <Image
+                        source={require('../../assets/icon.png')}
+                        style={{ width: 32, height: 32, borderRadius: 6 }}
+                        resizeMode="contain"
+                    />
                     <Text style={styles.logoText}>ZyTube</Text>
                 </View>
 
