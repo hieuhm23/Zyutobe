@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     View,
     Text,
@@ -15,18 +16,67 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 import pipedApi, { VideoItem } from '../services/pipedApi';
+import youtubeApi from '../services/youtubeApi';
+
+import { usePlayer } from '../context/PlayerContext';
 
 const SearchScreen = ({ route, navigation }: any) => {
     const { query: initialQuery } = route.params || {};
     const insets = useSafeAreaInsets();
+    const { playVideo } = usePlayer();
 
     const [searchQuery, setSearchQuery] = useState(initialQuery || '');
     const [results, setResults] = useState<VideoItem[]>([]);
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [activeFilter, setActiveFilter] = useState<string>('videos');
     const [nextPage, setNextPage] = useState<string | null>(null);
+    const [searchHistory, setSearchHistory] = useState<string[]>([]);
+    const [trendingKeywords] = useState<string[]>([
+        'động bổn máy thay',
+        'nhạc tết 2026',
+        'phim hành động',
+        'v-pop hot',
+        'game livestream',
+        'tin tức mới nhất',
+        'hướng dẫn nấu ăn',
+        'review phim',
+    ]);
+
+    useEffect(() => {
+        loadHistory();
+    }, []);
+
+    const loadHistory = async () => {
+        try {
+            const history = await AsyncStorage.getItem('search_history');
+            if (history) setSearchHistory(JSON.parse(history));
+        } catch (e) {
+            console.log('Error loading history:', e);
+        }
+    };
+
+    const addToHistory = async (query: string) => {
+        try {
+            const newHistory = [query, ...searchHistory.filter(i => i !== query)].slice(0, 10);
+            setSearchHistory(newHistory);
+            await AsyncStorage.setItem('search_history', JSON.stringify(newHistory));
+        } catch (e) {
+            console.log('Error saving history:', e);
+        }
+    };
+
+    const removeFromHistory = async (query: string) => {
+        try {
+            const newHistory = searchHistory.filter(i => i !== query);
+            setSearchHistory(newHistory);
+            await AsyncStorage.setItem('search_history', JSON.stringify(newHistory));
+        } catch (e) {
+            console.log('Error removing history:', e);
+        }
+    };
 
     useEffect(() => {
         if (initialQuery) {
@@ -35,6 +85,13 @@ const SearchScreen = ({ route, navigation }: any) => {
     }, [initialQuery]);
 
     useEffect(() => {
+        if (searchQuery.trim() === '') {
+            setResults([]);
+            setSuggestions([]);
+            setShowSuggestions(false);
+            return;
+        }
+
         const timer = setTimeout(async () => {
             if (searchQuery.length > 1) {
                 try {
@@ -56,15 +113,29 @@ const SearchScreen = ({ route, navigation }: any) => {
     const performSearch = async (query: string, filter: string = activeFilter) => {
         if (!query.trim()) return;
 
+        addToHistory(query);
         Keyboard.dismiss();
         setShowSuggestions(false);
         setLoading(true);
         setResults([]);
 
         try {
-            const data = await pipedApi.search(query, filter);
-            setResults(data.items || []);
-            setNextPage(data.nextpage);
+            let items: VideoItem[] = [];
+            let token: string | null = null;
+
+            try {
+                // Ưu tiên YouTube API nếu có
+                const ytData = await youtubeApi.search(query, filter);
+                items = ytData.items || [];
+                token = ytData.nextPageToken || null;
+            } catch (e) {
+                console.log('YouTube Search Error, fallback to Piped:', e);
+                const pipedData = await pipedApi.search(query);
+                items = pipedData;
+            }
+
+            setResults(items);
+            setNextPage(token);
         } catch (error) {
             console.error('Error searching:', error);
         } finally {
@@ -78,8 +149,29 @@ const SearchScreen = ({ route, navigation }: any) => {
     };
 
     const handleVideoPress = (video: VideoItem) => {
-        const videoId = video.url?.replace('/watch?v=', '') || '';
-        navigation.navigate('Player', { videoId, video });
+        playVideo(video);
+    };
+
+    const handleLoadMore = async () => {
+        if (loading || loadingMore || !nextPage || !searchQuery.trim()) return;
+
+        setLoadingMore(true);
+        try {
+            const ytData = await youtubeApi.searchNextPage(searchQuery, nextPage, activeFilter);
+            const items = ytData.items || [];
+            const token = ytData.nextPageToken || null;
+
+            if (items.length > 0) {
+                setResults(prev => [...prev, ...items]);
+                setNextPage(token);
+            } else {
+                setNextPage(null);
+            }
+        } catch (error) {
+            console.error("Load more error:", error);
+        } finally {
+            setLoadingMore(false);
+        }
     };
 
     const handleFilterChange = (filter: string) => {
@@ -100,47 +192,73 @@ const SearchScreen = ({ route, navigation }: any) => {
         </TouchableOpacity>
     );
 
-    const renderVideoCard = ({ item }: { item: VideoItem }) => (
-        <TouchableOpacity
-            style={styles.videoCard}
-            onPress={() => handleVideoPress(item)}
-            activeOpacity={0.8}
-        >
-            <View style={styles.thumbnailContainer}>
-                <Image
-                    source={{ uri: item.thumbnail }}
-                    style={styles.thumbnail}
-                    resizeMode="cover"
-                />
-                <View style={styles.durationBadge}>
-                    <Text style={styles.durationText}>
-                        {pipedApi.formatDuration(item.duration)}
-                    </Text>
-                </View>
-            </View>
+    const renderVideoCard = ({ item }: { item: VideoItem }) => {
+        const isChannel = item.type === 'channel';
+        const isPlaylist = item.type === 'playlist';
 
-            <View style={styles.videoInfo}>
-                <Text style={styles.videoTitle} numberOfLines={2}>
-                    {item.title}
-                </Text>
-                <View style={styles.videoMeta}>
-                    <Text style={styles.channelName} numberOfLines={1}>
-                        {item.uploaderName}
-                    </Text>
-                    {item.uploaderVerified && (
-                        <MaterialCommunityIcons
-                            name="check-decagram"
-                            size={12}
-                            color={COLORS.primary}
-                        />
+        return (
+            <TouchableOpacity
+                style={[styles.videoCard, isChannel && { alignItems: 'center', flexDirection: 'row', paddingHorizontal: 10 }]}
+                onPress={() => handleVideoPress(item)}
+                activeOpacity={0.8}
+            >
+                {/* Thumbnail */}
+                <View style={isChannel ? { width: 80, height: 80, borderRadius: 40, overflow: 'hidden', marginRight: 15 } : styles.thumbnailContainer}>
+                    <Image
+                        source={{ uri: item.thumbnail }}
+                        style={isChannel ? { width: '100%', height: '100%' } : styles.thumbnail}
+                        resizeMode="cover"
+                    />
+                    {!isChannel && !isPlaylist && (
+                        <View style={styles.durationBadge}>
+                            <Text style={styles.durationText}>
+                                {pipedApi.formatDuration(item.duration || 0)}
+                            </Text>
+                        </View>
+                    )}
+                    {isPlaylist && (
+                        <View style={[styles.durationBadge, { right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 0 }]}>
+                            <Text style={styles.durationText}>PLAYLIST</Text>
+                        </View>
                     )}
                 </View>
-                <Text style={styles.viewsText}>
-                    {pipedApi.formatViews(item.views)} views • {item.uploadedDate}
-                </Text>
-            </View>
-        </TouchableOpacity>
-    );
+
+                {/* Info */}
+                <View style={[styles.videoInfo, isChannel && { marginTop: 0, flex: 1, flexDirection: 'column', alignItems: 'flex-start' }]}>
+                    {!isChannel && (
+                        <Image
+                            source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
+                            style={styles.channelAvatar}
+                        />
+                    )}
+
+                    <View style={styles.textContainer}>
+                        <Text style={styles.videoTitle} numberOfLines={2}>
+                            {item.title}
+                        </Text>
+                        <Text style={styles.videoMeta}>
+                            {isChannel
+                                ? `@${item.title} • Đăng ký`
+                                : `${item.uploaderName} • ${!isPlaylist ? pipedApi.formatViews(item.views || 0) : 'Playlist'} • ${item.uploadedDate}`
+                            }
+                        </Text>
+                    </View>
+
+                    {!isChannel && (
+                        <TouchableOpacity style={{ padding: 5, marginTop: -5 }}>
+                            <Ionicons name="ellipsis-vertical" size={16} color={COLORS.textSecondary} />
+                        </TouchableOpacity>
+                    )}
+
+                    {isChannel && (
+                        <TouchableOpacity style={{ marginTop: 5 }}>
+                            <Text style={{ color: COLORS.primary, fontWeight: 'bold', fontSize: 13 }}>ĐĂNG KÝ</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -193,6 +311,70 @@ const SearchScreen = ({ route, navigation }: any) => {
                 </View>
             )}
 
+            {/* Search History */}
+            {!loading && results.length === 0 && searchQuery.length === 0 && searchHistory.length > 0 && (
+                <View style={{ marginTop: SPACING.m }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingHorizontal: SPACING.m }}>
+                        <Text style={{ color: COLORS.textPrimary, fontWeight: 'bold', fontSize: 16 }}>Lịch sử tìm kiếm</Text>
+                        <TouchableOpacity onPress={() => { setSearchHistory([]); AsyncStorage.removeItem('search_history'); }}>
+                            <Text style={{ color: COLORS.textTertiary, fontSize: 12 }}>Xóa tất cả</Text>
+                        </TouchableOpacity>
+                    </View>
+                    {searchHistory.map((item, index) => (
+                        <TouchableOpacity
+                            key={index}
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                paddingHorizontal: SPACING.m,
+                                paddingVertical: 12,
+                                borderBottomWidth: 1,
+                                borderBottomColor: COLORS.border
+                            }}
+                            onPress={() => { setSearchQuery(item); performSearch(item); }}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                <Ionicons name="time-outline" size={20} color={COLORS.textTertiary} />
+                                <Text style={{ color: COLORS.textPrimary, fontSize: 16, marginLeft: SPACING.m }} numberOfLines={1}>{item}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => removeFromHistory(item)} style={{ padding: 4 }}>
+                                <Ionicons name="close" size={20} color={COLORS.textTertiary} />
+                            </TouchableOpacity>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+
+            {/* Trending Keywords */}
+            {!loading && results.length === 0 && searchQuery.length === 0 && (
+                <View style={{ marginTop: SPACING.l, paddingHorizontal: SPACING.m }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                        <Ionicons name="trending-up" size={20} color={COLORS.primary} />
+                        <Text style={{ color: COLORS.textPrimary, fontWeight: 'bold', fontSize: 16, marginLeft: 8 }}>Xu hướng tìm kiếm</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {trendingKeywords.map((keyword, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                onPress={() => { setSearchQuery(keyword); performSearch(keyword); }}
+                                style={{
+                                    backgroundColor: COLORS.surface,
+                                    paddingHorizontal: 14,
+                                    paddingVertical: 10,
+                                    borderRadius: 20,
+                                    marginRight: 8,
+                                    marginBottom: 10,
+                                    borderWidth: 1,
+                                    borderColor: COLORS.border
+                                }}
+                            >
+                                <Text style={{ color: COLORS.textPrimary, fontSize: 13 }}>{keyword}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+            )}
+
             {loading ? (
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={COLORS.primary} />
@@ -205,6 +387,13 @@ const SearchScreen = ({ route, navigation }: any) => {
                     renderItem={renderVideoCard}
                     contentContainerStyle={styles.resultsList}
                     showsVerticalScrollIndicator={false}
+                    onEndReached={handleLoadMore}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={
+                        loadingMore ? (
+                            <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 20 }} />
+                        ) : <View style={{ height: 20 }} />
+                    }
                     ListEmptyComponent={
                         !loading && searchQuery ? (
                             <View style={styles.emptyContainer}>
@@ -312,27 +501,25 @@ const styles = StyleSheet.create({
         paddingBottom: SPACING.xxl,
     },
     videoCard: {
-        flexDirection: 'row',
-        marginBottom: SPACING.m,
+        marginBottom: SPACING.l,
     },
     thumbnailContainer: {
-        position: 'relative',
-        borderRadius: RADIUS.s,
+        borderRadius: RADIUS.m,
         overflow: 'hidden',
     },
     thumbnail: {
-        width: 160,
-        height: 90,
+        width: '100%',
+        aspectRatio: 16 / 9,
         backgroundColor: COLORS.surface,
     },
     durationBadge: {
         position: 'absolute',
-        bottom: 4,
-        right: 4,
+        bottom: SPACING.s,
+        right: SPACING.s,
         backgroundColor: 'rgba(0,0,0,0.8)',
-        paddingHorizontal: 6,
+        paddingHorizontal: SPACING.s,
         paddingVertical: 2,
-        borderRadius: 4,
+        borderRadius: RADIUS.xs,
     },
     durationText: {
         color: COLORS.textPrimary,
@@ -340,30 +527,29 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     videoInfo: {
+        flexDirection: 'row',
+        marginTop: SPACING.m,
+    },
+    channelAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        marginRight: 10,
+        backgroundColor: COLORS.surface,
+    },
+    textContainer: {
         flex: 1,
-        marginLeft: SPACING.m,
-        justifyContent: 'center',
     },
     videoTitle: {
-        fontSize: FONTS.sizes.s,
+        fontSize: FONTS.sizes.m,
         fontWeight: '500',
         color: COLORS.textPrimary,
-        lineHeight: 18,
+        lineHeight: 20,
     },
     videoMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    channelName: {
         fontSize: FONTS.sizes.xs,
         color: COLORS.textSecondary,
-        marginRight: 4,
-    },
-    viewsText: {
-        fontSize: FONTS.sizes.xs,
-        color: COLORS.textTertiary,
-        marginTop: 2,
+        marginTop: 4,
     },
     emptyContainer: {
         flex: 1,

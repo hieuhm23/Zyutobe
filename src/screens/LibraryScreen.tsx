@@ -15,11 +15,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 import { useLibrary } from '../hooks/useLibrary';
 import pipedApi from '../services/pipedApi';
+import { usePlayer } from '../context/PlayerContext';
 
 const LibraryScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
     const [activeTab, setActiveTab] = useState<'favorites' | 'history' | 'downloads'>('favorites');
     const { favorites, history, loading, refreshLibrary } = useLibrary();
+    const { playVideo } = usePlayer();
 
     useFocusEffect(
         useCallback(() => {
@@ -58,18 +60,28 @@ const LibraryScreen = ({ navigation }: any) => {
             <TouchableOpacity
                 key={index + video.url}
                 style={styles.videoCard}
-                onPress={() => {
-                    const videoId = video.url?.replace('/watch?v=', '') || '';
-                    navigation.navigate('Player', { videoId, video });
-                }}
+                onPress={() => playVideo(video)}
+                activeOpacity={0.8}
             >
-                <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} />
+                <View style={styles.thumbnailContainer}>
+                    <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} />
+                    <View style={styles.durationBadge}>
+                        <Text style={styles.durationText}>
+                            {pipedApi.formatDuration(video.duration || 0)}
+                        </Text>
+                    </View>
+                </View>
                 <View style={styles.videoInfo}>
-                    <Text style={styles.videoTitle} numberOfLines={2}>{video.title}</Text>
-                    <Text style={styles.channelName}>{video.uploaderName}</Text>
-                    <Text style={styles.viewsDate}>
-                        {pipedApi.formatViews(video.views)} views
-                    </Text>
+                    <Image
+                        source={{ uri: video.uploaderAvatar || 'https://via.placeholder.com/40' }}
+                        style={styles.channelAvatar}
+                    />
+                    <View style={styles.textContainer}>
+                        <Text style={styles.videoTitle} numberOfLines={2}>{video.title}</Text>
+                        <Text style={styles.channelName}>
+                            {video.uploaderName} • {pipedApi.formatViews(video.views || 0)}
+                        </Text>
+                    </View>
                 </View>
             </TouchableOpacity>
         ))
@@ -199,35 +211,55 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     videoCard: {
-        flexDirection: 'row',
-        marginBottom: SPACING.m,
+        marginBottom: SPACING.l,
+    },
+    thumbnailContainer: {
+        borderRadius: RADIUS.m,
+        overflow: 'hidden',
     },
     thumbnail: {
-        width: 160,
-        height: 90,
-        borderRadius: RADIUS.s,
+        width: '100%',
+        aspectRatio: 16 / 9,
         backgroundColor: COLORS.surface,
     },
+    durationBadge: {
+        position: 'absolute',
+        bottom: SPACING.s,
+        right: SPACING.s,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        paddingHorizontal: SPACING.s,
+        paddingVertical: 2,
+        borderRadius: RADIUS.xs,
+    },
+    durationText: {
+        color: COLORS.textPrimary,
+        fontSize: FONTS.sizes.xs,
+        fontWeight: '500',
+    },
     videoInfo: {
+        flexDirection: 'row',
+        marginTop: SPACING.m,
+    },
+    channelAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        marginRight: 10,
+        backgroundColor: COLORS.surface,
+    },
+    textContainer: {
         flex: 1,
-        marginLeft: SPACING.m,
-        justifyContent: 'center',
     },
     videoTitle: {
-        fontSize: FONTS.sizes.s,
+        fontSize: FONTS.sizes.m,
         fontWeight: '500',
         color: COLORS.textPrimary,
-        lineHeight: 18,
+        lineHeight: 20,
     },
     channelName: {
         fontSize: FONTS.sizes.xs,
         color: COLORS.textSecondary,
         marginTop: 4,
-    },
-    viewsDate: {
-        fontSize: FONTS.sizes.xs,
-        color: COLORS.textTertiary,
-        marginTop: 2,
     },
 });
 

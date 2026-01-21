@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -15,43 +15,88 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 import pipedApi, { VideoItem } from '../services/pipedApi';
+import youtubeApi from '../services/youtubeApi';
 
-type TabType = 'music' | 'video' | 'trending' | 'recent';
+import { usePlayer } from '../context/PlayerContext';
+
+type TabType = 'featured' | 'trending';
 
 const HomeScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
-    const [activeTab, setActiveTab] = useState<TabType>('trending');
+    const { playVideo } = usePlayer();
+
+    // Refs for Scroll Logic
+    const flatListRef = useRef<FlatList>(null);
+    const scrollOffset = useRef(0);
+
+    const [activeTab, setActiveTab] = useState<TabType>('featured');
     const [searchQuery, setSearchQuery] = useState('');
     const [videos, setVideos] = useState<VideoItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+    const [currentTag, setCurrentTag] = useState('video hot thịnh hành');
+
+    // Tab Press Listener (YouTube Style: Scroll to top OR Refresh)
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('tabPress', (e: any) => {
+            if (navigation.isFocused()) {
+                // If scrolled down > 100px, scroll to top
+                if (scrollOffset.current > 100) {
+                    e.preventDefault(); // Stop default jump
+                    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+                } else {
+                    // If at top, Refresh
+                    onRefresh();
+                }
+            }
+        });
+        return unsubscribe;
+    }, [navigation, activeTab]);
 
     useEffect(() => {
         loadContent();
     }, [activeTab]);
 
-    const loadContent = async () => {
-        setLoading(true);
+    const loadContent = async (loadMore: boolean = false, forceRefresh: boolean = false, overrideTag?: string) => {
+        if (loadMore && !nextPageToken) return;
+        if (!loadMore) setLoading(true);
+
         try {
-            let data: VideoItem[] = [];
+            let newItems: VideoItem[] = [];
+            let newToken: string | null = null;
+            const tokenToUse = (loadMore && nextPageToken) ? nextPageToken : undefined;
+            const queryTag = overrideTag || currentTag;
 
             switch (activeTab) {
                 case 'trending':
-                    data = await pipedApi.getTrending('VN');
+                    const data = await youtubeApi.getTrending('VN', tokenToUse, forceRefresh);
+                    newItems = data.items;
+                    newToken = data.nextPageToken || null;
                     break;
-                case 'music':
-                    const musicResult = await pipedApi.search('nhạc việt nam hot 2024', 'music_songs');
-                    data = musicResult.items || [];
-                    break;
-                case 'video':
-                    const videoResult = await pipedApi.search('video hot việt nam', 'videos');
-                    data = videoResult.items || [];
+                case 'featured':
+                    // "Tất cả" - Random Discovery Feed using Search
+                    let featData;
+                    if (tokenToUse) {
+                        featData = await youtubeApi.searchNextPage(queryTag, tokenToUse);
+                    } else {
+                        featData = await youtubeApi.search(queryTag);
+                    }
+                    newItems = featData.items || [];
+                    newToken = featData.nextPageToken || null;
                     break;
                 default:
-                    data = await pipedApi.getTrending('VN');
+                    const defData = await youtubeApi.getTrending('VN', tokenToUse, forceRefresh);
+                    newItems = defData.items;
+                    newToken = defData.nextPageToken || null;
             }
 
-            setVideos(data);
+            if (loadMore) {
+                setVideos(prev => [...prev, ...newItems]);
+            } else {
+                setVideos(newItems);
+            }
+            setNextPageToken(newToken);
         } catch (error) {
             console.error('Error loading content:', error);
         } finally {
@@ -62,18 +107,43 @@ const HomeScreen = ({ navigation }: any) => {
 
     const onRefresh = () => {
         setRefreshing(true);
-        loadContent();
+        setNextPageToken(null);
+
+        if (activeTab === 'featured') {
+            // Prioritize Music content (80% music, 20% variety)
+            const tags = [
+                'nhạc trẻ remix hot tiktok',
+                'lofi chill nhẹ nhàng',
+                'top hit việt nam 2024',
+                'nhạc edm gây nghiện',
+                'bolero trữ tình hay nhất',
+                'nhạc acoustic thư giãn',
+                'nhạc rap việt mới nhất',
+                'video hot thịnh hành',
+                'hài mới nhất'
+            ];
+            const newTag = tags[Math.floor(Math.random() * tags.length)];
+            setCurrentTag(newTag);
+            loadContent(false, true, newTag);
+        } else {
+            loadContent(false, true);
+        }
+    };
+
+    const handleLoadMore = () => {
+        if (!loading && nextPageToken) {
+            loadContent(true);
+        }
     };
 
     const handleSearch = () => {
         if (searchQuery.trim()) {
-            navigation.navigate('Search', { query: searchQuery });
+            navigation.navigate('Search', { query: searchQuery, useYoutube: true });
         }
     };
 
     const handleVideoPress = (video: VideoItem) => {
-        const videoId = video.url?.replace('/watch?v=', '') || '';
-        navigation.navigate('Player', { videoId, video });
+        playVideo(video);
     };
 
     const renderTab = (tab: TabType, label: string, icon: string) => (
@@ -107,7 +177,7 @@ const HomeScreen = ({ navigation }: any) => {
                 />
                 <View style={styles.durationBadge}>
                     <Text style={styles.durationText}>
-                        {pipedApi.formatDuration(item.duration)}
+                        {youtubeApi.formatDuration(item.duration || 0)}
                     </Text>
                 </View>
             </View>
@@ -126,7 +196,7 @@ const HomeScreen = ({ navigation }: any) => {
                         {item.uploaderName}
                     </Text>
                     <Text style={styles.viewsDate}>
-                        {pipedApi.formatViews(item.views)} views • {item.uploadedDate}
+                        {youtubeApi.formatViews(item.views || 0)} views • {item.uploadedDate}
                     </Text>
                 </View>
             </View>
@@ -137,35 +207,31 @@ const HomeScreen = ({ navigation }: any) => {
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
 
-            <View style={styles.header}>
-                <View style={styles.logoRow}>
+            <View style={[styles.header, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                <TouchableOpacity
+                    style={[styles.logoRow, { marginBottom: 0 }]}
+                    activeOpacity={0.7}
+                    onPress={() => onRefresh()}
+                >
                     <Image
                         source={require('../../assets/icon.png')}
                         style={{ width: 32, height: 32, borderRadius: 6 }}
                         resizeMode="contain"
                     />
                     <Text style={styles.logoText}>ZyTube</Text>
-                </View>
+                </TouchableOpacity>
 
-                <View style={styles.searchContainer}>
-                    <Ionicons name="search" size={20} color={COLORS.textTertiary} />
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Tìm kiếm video, nhạc..."
-                        placeholderTextColor={COLORS.textTertiary}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        onSubmitEditing={handleSearch}
-                        returnKeyType="search"
-                    />
-                </View>
+                <TouchableOpacity
+                    onPress={() => navigation.navigate('Search')}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons name="search-outline" size={26} color={COLORS.textPrimary} />
+                </TouchableOpacity>
             </View>
 
             <View style={styles.tabBar}>
-                {renderTab('music', 'Nhạc', 'musical-notes')}
-                {renderTab('video', 'Video', 'videocam')}
-                {renderTab('trending', 'Xu hướng', 'flame')}
-                {renderTab('recent', 'Gần đây', 'time')}
+                {renderTab('featured', 'Tất cả', 'grid')}
+                {renderTab('trending', 'Xu Hướng', 'flame')}
             </View>
 
             {loading && !refreshing ? (
@@ -175,11 +241,23 @@ const HomeScreen = ({ navigation }: any) => {
                 </View>
             ) : (
                 <FlatList
+                    ref={flatListRef}
                     data={videos}
                     keyExtractor={(item, index) => item.url + index}
                     renderItem={renderVideoCard}
                     contentContainerStyle={styles.videoList}
                     showsVerticalScrollIndicator={false}
+                    onEndReached={handleLoadMore}
+                    onEndReachedThreshold={0.5}
+                    onScroll={(e) => {
+                        scrollOffset.current = e.nativeEvent.contentOffset.y;
+                    }}
+                    scrollEventThrottle={16}
+                    ListFooterComponent={
+                        loading && videos.length > 0 ? (
+                            <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 20 }} />
+                        ) : <View style={{ height: 20 }} />
+                    }
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}

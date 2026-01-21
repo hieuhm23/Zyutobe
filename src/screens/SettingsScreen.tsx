@@ -7,16 +7,65 @@ import {
     TouchableOpacity,
     StatusBar,
     Alert,
+    Image
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 
-const SettingsScreen = () => {
-    const insets = useSafeAreaInsets();
+import { useSettings } from '../context/SettingsContext';
+import { useNavigation } from '@react-navigation/native';
 
-    const [backgroundPlay, setBackgroundPlay] = useState(true);
-    const [autoPlay, setAutoPlay] = useState(true);
+const SettingsScreen = () => {
+    const navigation = useNavigation<any>();
+    const insets = useSafeAreaInsets();
+    const {
+        autoPlay,
+        toggleAutoPlay,
+        backgroundPlay,
+        toggleBackgroundPlay,
+        autoPiP,
+        toggleAutoPiP,
+        videoQuality,
+        setVideoQuality,
+        clearCache
+    } = useSettings();
+
+    const handleVideoQuality = () => {
+        Alert.alert(
+            'Chất lượng video mặc định',
+            'Chọn chất lượng video:',
+            [
+                { text: '360p', onPress: () => setVideoQuality('360p') },
+                { text: '480p', onPress: () => setVideoQuality('480p') },
+                { text: '720p', onPress: () => setVideoQuality('720p') },
+                { text: '1080p', onPress: () => setVideoQuality('1080p') },
+                { text: 'Hủy', style: 'cancel' }
+            ]
+        );
+    };
+
+    const handleClearCache = async () => {
+        Alert.alert(
+            'Xóa cache',
+            'Bạn có chắc muốn xóa tất cả cache? Điều này sẽ xóa dữ liệu tạm thời.',
+            [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                    text: 'Xóa',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const result = await clearCache();
+                        if (result.success) {
+                            Alert.alert('Thành công', `Đã xóa ${result.size} cache!`);
+                        } else {
+                            Alert.alert('Lỗi', 'Không thể xóa cache.');
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     const renderSettingItem = (
         icon: string,
@@ -58,17 +107,43 @@ const SettingsScreen = () => {
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Profile Section */}
+                {/* Backup/Restore Section */}
                 <View style={styles.profileCard}>
                     <View style={styles.avatarContainer}>
-                        <MaterialCommunityIcons name="account" size={40} color={COLORS.primary} />
+                        <Ionicons name="cloud-outline" size={36} color={COLORS.primary} />
                     </View>
                     <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>Đăng nhập</Text>
-                        <Text style={styles.profileSubtext}>Đồng bộ dữ liệu của bạn</Text>
+                        <Text style={styles.profileName}>Dữ liệu của bạn</Text>
+                        <Text style={styles.profileSubtext}>Sao lưu & khôi phục</Text>
                     </View>
-                    <TouchableOpacity style={styles.loginButton}>
-                        <Text style={styles.loginButtonText}>Đăng nhập</Text>
+                </View>
+
+                <View style={[styles.settingsCard, { marginBottom: SPACING.l }]}>
+                    <TouchableOpacity
+                        style={styles.settingItem}
+                        onPress={() => Alert.alert('Sao lưu', 'Tính năng sao lưu sẽ được triển khai sau.')}
+                    >
+                        <View style={[styles.iconContainer, { backgroundColor: '#10B981' + '20' }]}>
+                            <Ionicons name="cloud-upload-outline" size={22} color="#10B981" />
+                        </View>
+                        <View style={styles.settingInfo}>
+                            <Text style={styles.settingTitle}>Sao lưu dữ liệu</Text>
+                            <Text style={styles.settingSubtitle}>Xuất lịch sử, yêu thích ra file</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.settingItem, { borderBottomWidth: 0 }]}
+                        onPress={() => Alert.alert('Khôi phục', 'Tính năng khôi phục sẽ được triển khai sau.')}
+                    >
+                        <View style={[styles.iconContainer, { backgroundColor: '#6366F1' + '20' }]}>
+                            <Ionicons name="cloud-download-outline" size={22} color="#6366F1" />
+                        </View>
+                        <View style={styles.settingInfo}>
+                            <Text style={styles.settingTitle}>Khôi phục dữ liệu</Text>
+                            <Text style={styles.settingSubtitle}>Nhập dữ liệu từ file backup</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
                     </TouchableOpacity>
                 </View>
 
@@ -82,7 +157,7 @@ const SettingsScreen = () => {
                         'Tiếp tục phát khi tắt màn hình',
                         true,
                         backgroundPlay,
-                        () => setBackgroundPlay(!backgroundPlay)
+                        toggleBackgroundPlay
                     )}
                     {renderSettingItem(
                         'play-circle',
@@ -91,7 +166,16 @@ const SettingsScreen = () => {
                         'Phát video tiếp theo tự động',
                         true,
                         autoPlay,
-                        () => setAutoPlay(!autoPlay)
+                        toggleAutoPlay
+                    )}
+                    {renderSettingItem(
+                        'albums',
+                        '#8B5CF6',
+                        'Tự động PiP',
+                        'Mở hình trong hình khi thoát',
+                        true,
+                        autoPiP,
+                        toggleAutoPiP
                     )}
                 </View>
 
@@ -102,21 +186,21 @@ const SettingsScreen = () => {
                         'cloud-download',
                         '#00B4D8',
                         'Chất lượng video mặc định',
-                        '720p',
+                        videoQuality,
                         false,
                         false,
                         undefined,
-                        () => Alert.alert('Chất lượng video', 'Chọn chất lượng: 360p, 480p, 720p, 1080p')
+                        handleVideoQuality
                     )}
                     {renderSettingItem(
                         'trash',
                         COLORS.error,
                         'Xóa cache',
-                        '0 MB',
+                        'Xóa dữ liệu tạm thời',
                         false,
                         false,
                         undefined,
-                        () => Alert.alert('Thành công', 'Cache đã được xóa!')
+                        handleClearCache
                     )}
                 </View>
 
@@ -129,13 +213,46 @@ const SettingsScreen = () => {
                         'Phiên bản',
                         '1.0.0'
                     )}
+                    {renderSettingItem(
+                        'shield-checkmark',
+                        '#10B981',
+                        'Chính sách bảo mật',
+                        undefined,
+                        false,
+                        false,
+                        undefined,
+                        () => navigation.navigate('PrivacyPolicy')
+                    )}
+                    {renderSettingItem(
+                        'document-text',
+                        '#8B5CF6',
+                        'Điều khoản sử dụng',
+                        undefined,
+                        false,
+                        false,
+                        undefined,
+                        () => navigation.navigate('TermsOfService')
+                    )}
+                    {renderSettingItem(
+                        'bug',
+                        '#EF4444',
+                        'Phản hồi & Báo lỗi',
+                        undefined,
+                        false,
+                        false,
+                        undefined,
+                        () => Alert.alert('Phản hồi', 'Cảm ơn bạn đã đóng góp ý kiến!')
+                    )}
                 </View>
 
                 {/* Footer */}
                 <View style={styles.footer}>
-                    <MaterialCommunityIcons name="youtube" size={32} color={COLORS.primary} />
+                    <Image
+                        source={require('../../assets/icon.png')}
+                        style={{ width: 32, height: 32, borderRadius: 8, marginBottom: 5 }}
+                        resizeMode="contain"
+                    />
                     <Text style={styles.footerTitle}>ZyTube</Text>
-                    <Text style={styles.footerSubtitle}>Xem video không giới hạn</Text>
                 </View>
             </ScrollView>
         </View>
@@ -258,15 +375,11 @@ const styles = StyleSheet.create({
     footer: {
         alignItems: 'center',
         paddingVertical: SPACING.xxl,
+        opacity: 0.6,
     },
     footerTitle: {
-        fontSize: FONTS.sizes.l,
-        fontWeight: 'bold',
-        color: COLORS.textPrimary,
-        marginTop: SPACING.s,
-    },
-    footerSubtitle: {
-        fontSize: FONTS.sizes.s,
+        fontSize: FONTS.sizes.m,
+        fontWeight: '600',
         color: COLORS.textSecondary,
         marginTop: SPACING.xs,
     },

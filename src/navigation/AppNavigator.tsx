@@ -10,6 +10,8 @@ import SearchScreen from '../screens/SearchScreen';
 import PlayerScreen from '../screens/PlayerScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
+import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -36,8 +38,8 @@ const TabNavigator = () => {
                 component={HomeScreen}
                 options={{
                     tabBarLabel: 'Trang chủ',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="home" size={size} color={color} />
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "home" : "home-outline"} size={size} color={color} />
                     ),
                 }}
             />
@@ -46,8 +48,8 @@ const TabNavigator = () => {
                 component={SearchScreen}
                 options={{
                     tabBarLabel: 'Tìm kiếm',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="search" size={size} color={color} />
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "search" : "search-outline"} size={size} color={color} />
                     ),
                 }}
             />
@@ -56,8 +58,8 @@ const TabNavigator = () => {
                 component={LibraryScreen}
                 options={{
                     tabBarLabel: 'Thư viện',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="library" size={size} color={color} />
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "library" : "library-outline"} size={size} color={color} />
                     ),
                 }}
             />
@@ -66,8 +68,8 @@ const TabNavigator = () => {
                 component={SettingsScreen}
                 options={{
                     tabBarLabel: 'Cài đặt',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="settings" size={size} color={color} />
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "settings" : "settings-outline"} size={size} color={color} />
                     ),
                 }}
             />
@@ -93,6 +95,8 @@ const AppNavigator = () => {
                     }}
                 />
                 <Stack.Screen name="Search" component={SearchScreen} />
+                <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+                <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );
