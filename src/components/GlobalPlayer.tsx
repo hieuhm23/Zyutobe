@@ -17,7 +17,7 @@ import {
     Platform
 } from 'react-native';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
 import pipedApi from '../services/pipedApi';
@@ -422,6 +422,9 @@ const GlobalPlayer = () => {
                                                 <Ionicons name="chevron-down" size={32} color="#fff" />
                                             </TouchableOpacity>
                                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <TouchableOpacity style={{ padding: 5, marginRight: 10 }} onPress={toggleFullscreen}>
+                                                    <MaterialCommunityIcons name="picture-in-picture-bottom-right" size={24} color="#fff" />
+                                                </TouchableOpacity>
                                                 <TouchableOpacity style={{ padding: 5 }} onPress={() => setShowSettingsModal(true)}>
                                                     <Ionicons name="settings-outline" size={24} color="#fff" />
                                                 </TouchableOpacity>

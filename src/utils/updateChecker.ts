@@ -38,18 +38,34 @@ export const checkForUpdates = async (showNoUpdateMessage = false) => {
             return false;
         }
 
+        // For debugging on real device
+        console.log('Update info:', {
+            channel: Updates.channel,
+            runtimeVersion: Updates.runtimeVersion,
+            updateId: Updates.updateId
+        });
+
         const update = await Updates.checkForUpdateAsync();
 
         if (update.isAvailable) {
-            return true; // Let the modal handle it
+            return true;
         } else if (showNoUpdateMessage) {
-            Alert.alert('✅ Đã cập nhật', 'Bạn đang sử dụng phiên bản mới nhất của ZyTube!');
+            Alert.alert('✅ Đã cập nhật', 'Bạn đang sử dụng phiên bản mới nhất!');
         }
         return false;
     } catch (e: any) {
         console.error('Error checking for updates:', e);
         if (showNoUpdateMessage) {
-            Alert.alert('Lỗi OTA', `Không thể kiểm tra bản cập nhật.\n\nChi tiết: ${e.message || String(e)}`);
+            const errorMsg = e.message || String(e);
+
+            if (errorMsg.includes('400') || errorMsg.includes('channel-name')) {
+                Alert.alert(
+                    'Cấu hình OTA',
+                    'Thiết bị chưa nhận diện được kênh (Channel). Vui lòng thử:\n1. Thoát app hẳn và mở lại.\n2. Nếu vẫn lỗi, hãy Build lại IPA với lệnh: eas build --profile production'
+                );
+            } else {
+                Alert.alert('Lỗi OTA', `Chi tiết: ${errorMsg}`);
+            }
         }
         return false;
     }

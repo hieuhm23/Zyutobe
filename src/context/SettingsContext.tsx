@@ -18,7 +18,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     const [autoPlay, setAutoPlay] = useState(true);
     const [backgroundPlay, setBackgroundPlay] = useState(true);
-    const [autoPiP, setAutoPiP] = useState(false);
+    const [autoPiP, setAutoPiP] = useState(true);
     const [videoQuality, setVideoQualityState] = useState('720p');
 
     useEffect(() => {
