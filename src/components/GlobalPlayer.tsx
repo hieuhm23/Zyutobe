@@ -12,7 +12,8 @@ import {
     PanResponder,
     ScrollView,
     FlatList,
-    Modal
+    Modal,
+    Alert
 } from 'react-native';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,8 +34,11 @@ const GlobalPlayer = () => {
     // Hooks
     const { video, videoId, isMinimized, playVideo, minimizePlayer, maximizePlayer, closePlayer } = usePlayer();
     const insets = useSafeAreaInsets();
-    const { addToHistory, isFavorite: checkIsFav } = useLibrary();
+    const { addToHistory, isFavorite: checkIsFav, toggleFavorite } = useLibrary();
     const { autoPlay, backgroundPlay } = useSettings();
+
+    // Favorite state
+    const [isFavorited, setIsFavorited] = useState(false);
 
     // Enable Background Play
     useEffect(() => {
@@ -443,18 +447,70 @@ const GlobalPlayer = () => {
 
                                         {/* Action Buttons */}
                                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 15 }}>
-                                            {[
-                                                { icon: 'heart-outline', label: 'Like' },
-                                                { icon: 'thumbs-down-outline', label: 'Dislike' },
-                                                { icon: 'share-social-outline', label: 'Share' },
-                                                { icon: 'download-outline', label: 'Download' },
-                                                { icon: 'bookmark-outline', label: 'Save' }
-                                            ].map((action, idx) => (
-                                                <TouchableOpacity key={idx} style={{ alignItems: 'center', marginRight: 25 }}>
-                                                    <Ionicons name={action.icon as any} size={24} color="#fff" />
-                                                    <Text style={{ color: '#fff', fontSize: 10, marginTop: 4 }}>{action.label}</Text>
-                                                </TouchableOpacity>
-                                            ))}
+                                            {/* Like Button */}
+                                            <TouchableOpacity
+                                                style={{ alignItems: 'center', marginRight: 25 }}
+                                                onPress={async () => {
+                                                    if (video) {
+                                                        const result = await toggleFavorite(video);
+                                                        setIsFavorited(result);
+                                                    }
+                                                }}
+                                            >
+                                                <Ionicons
+                                                    name={isFavorited || checkIsFav(videoId || '') ? 'heart' : 'heart-outline'}
+                                                    size={24}
+                                                    color={isFavorited || checkIsFav(videoId || '') ? COLORS.primary : '#fff'}
+                                                />
+                                                <Text style={{ color: isFavorited || checkIsFav(videoId || '') ? COLORS.primary : '#fff', fontSize: 10, marginTop: 4 }}>Thích</Text>
+                                            </TouchableOpacity>
+
+                                            {/* Share Button */}
+                                            <TouchableOpacity
+                                                style={{ alignItems: 'center', marginRight: 25 }}
+                                                onPress={() => {
+                                                    // Share functionality
+                                                    const shareUrl = `https://youtube.com/watch?v=${videoId}`;
+                                                    // For now, just show alert
+                                                    Alert.alert('Chia sẻ', shareUrl);
+                                                }}
+                                            >
+                                                <Ionicons name="share-social-outline" size={24} color="#fff" />
+                                                <Text style={{ color: '#fff', fontSize: 10, marginTop: 4 }}>Chia sẻ</Text>
+                                            </TouchableOpacity>
+
+                                            {/* Download Button */}
+                                            <TouchableOpacity
+                                                style={{ alignItems: 'center', marginRight: 25 }}
+                                                onPress={() => {
+                                                    Alert.alert(
+                                                        'Tải video',
+                                                        'Tính năng tải video sẽ được cập nhật trong phiên bản tới!',
+                                                        [{ text: 'OK' }]
+                                                    );
+                                                }}
+                                            >
+                                                <Ionicons name="download-outline" size={24} color="#fff" />
+                                                <Text style={{ color: '#fff', fontSize: 10, marginTop: 4 }}>Tải về</Text>
+                                            </TouchableOpacity>
+
+                                            {/* Save Button */}
+                                            <TouchableOpacity
+                                                style={{ alignItems: 'center', marginRight: 25 }}
+                                                onPress={async () => {
+                                                    if (video) {
+                                                        const result = await toggleFavorite(video);
+                                                        setIsFavorited(result);
+                                                        Alert.alert(
+                                                            result ? 'Đã lưu' : 'Đã xóa',
+                                                            result ? 'Video đã được thêm vào thư viện!' : 'Video đã bị xóa khỏi thư viện!'
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                <Ionicons name="bookmark-outline" size={24} color="#fff" />
+                                                <Text style={{ color: '#fff', fontSize: 10, marginTop: 4 }}>Lưu</Text>
+                                            </TouchableOpacity>
                                         </ScrollView>
 
                                         {/* Channel Info */}

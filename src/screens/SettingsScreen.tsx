@@ -15,6 +15,7 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 
 import { useSettings } from '../context/SettingsContext';
 import { useNavigation } from '@react-navigation/native';
+import { checkForUpdates } from '../utils/updateChecker';
 
 const SettingsScreen = () => {
     const navigation = useNavigation<any>();
@@ -212,6 +213,16 @@ const SettingsScreen = () => {
                         '#6366F1',
                         'Phiên bản',
                         '1.0.0'
+                    )}
+                    {renderSettingItem(
+                        'cloud-download',
+                        COLORS.primary,
+                        'Kiểm tra cập nhật',
+                        'Kiểm tra phiên bản mới',
+                        false,
+                        false,
+                        undefined,
+                        () => checkForUpdates(true)
                     )}
                     {renderSettingItem(
                         'shield-checkmark',
