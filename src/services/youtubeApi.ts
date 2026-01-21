@@ -12,59 +12,51 @@ import pipedApi from './pipedApi'; // Fallback Source
 
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 Hours
 
-// Helper for calling API
+// Helper for calling API with key rotation
 async function fetchYouTube(endpoint: string, params: Record<string, string>, forceRefresh: boolean = false) {
     const cacheKey = `yt_cache_${endpoint}_${JSON.stringify(params)}`;
 
-    // 1. Try Cache
     if (!forceRefresh) {
         try {
             const cached = await AsyncStorage.getItem(cacheKey);
             if (cached) {
                 const parsed = JSON.parse(cached);
                 if (Date.now() - parsed.timestamp < CACHE_TTL) {
-                    console.log('Returning CACHED result for:', endpoint);
                     return parsed.data;
                 }
             }
-        } catch (e) {
-            console.warn('Cache read error:', e);
+        } catch (e) { }
+    }
+
+    let lastError = null;
+    for (const key of API_KEYS) {
+        try {
+            const query = new URLSearchParams({ key, ...params }).toString();
+            const response = await fetch(`${BASE_URL}${endpoint}?${query}`);
+
+            if (response.ok) {
+                const data = await response.json();
+                try {
+                    await AsyncStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data }));
+                } catch (e) { }
+                return data;
+            }
+
+            if (response.status === 403) {
+                console.warn(`Key ${key.substring(0, 5)}... quota exceeded, trying next...`);
+                continue;
+            }
+
+            const errorText = await response.text();
+            throw new Error(`YT API ${response.status}: ${errorText}`);
+        } catch (e: any) {
+            lastError = e;
+            if (e.message === 'QUOTA_EXCEEDED') continue;
         }
     }
 
-    // 2. Try Network
-    const query = new URLSearchParams({
-        key: API_KEYS[0],
-        ...params
-    }).toString();
-
-    console.log(`Fetching YouTube API: ${endpoint}`);
-    const response = await fetch(`${BASE_URL}${endpoint}?${query}`);
-
-    if (!response.ok) {
-        // If Quota Exceeded (403), throw specific error to trigger fallback
-        if (response.status === 403) {
-            console.warn('YouTube API Quota Exceeded. Switching to Piped API fallback.');
-            throw new Error('QUOTA_EXCEEDED');
-        }
-        const errorText = await response.text();
-        console.warn('YouTube API Error Detail:', errorText);
-        throw new Error(`YouTube API Error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-
-    // 3. Save to Cache
-    try {
-        await AsyncStorage.setItem(cacheKey, JSON.stringify({
-            timestamp: Date.now(),
-            data: data
-        }));
-    } catch (e) {
-        console.warn('Cache write error:', e);
-    }
-
-    return data;
+    console.warn('All YouTube API keys failed or exceeded quota. Falling back to Piped.');
+    throw new Error('QUOTA_EXCEEDED');
 }
 
 // Convert YouTube API Response to our App's Interface
@@ -193,25 +185,33 @@ async function fetchVideoDetails(items: VideoItem[]): Promise<VideoItem[]> {
 export const youtubeApi = {
     // Search videos
     search: async (query: string, filter: string = 'video'): Promise<SearchResult> => {
-        let typeParam = 'video';
-        if (filter === 'channels') typeParam = 'channel';
-        if (filter === 'playlists') typeParam = 'playlist';
+        try {
+            let typeParam = 'video';
+            if (filter === 'channels') typeParam = 'channel';
+            if (filter === 'playlists') typeParam = 'playlist';
 
-        const data = await fetchYouTube('/search', {
-            part: 'snippet',
-            q: query,
-            type: typeParam,
-            maxResults: '20',
-        });
+            const data = await fetchYouTube('/search', {
+                part: 'snippet',
+                q: query,
+                type: typeParam,
+                maxResults: '20',
+            });
 
-        let items = data.items.map(mapYouTubeItemToVideoItem);
-        items = await fetchVideoDetails(items);
-        items = await fetchChannelAvatars(items);
+            let items = data.items.map(mapYouTubeItemToVideoItem);
+            items = await fetchVideoDetails(items);
+            items = await fetchChannelAvatars(items);
 
-        return {
-            items,
-            nextPageToken: data.nextPageToken,
-        };
+            return {
+                items,
+                nextPageToken: data.nextPageToken,
+            };
+        } catch (e: any) {
+            if (e.message === 'QUOTA_EXCEEDED') {
+                const pipedItems = await pipedApi.search(query);
+                return { items: pipedItems };
+            }
+            throw e;
+        }
     },
 
     // Search next page
@@ -287,6 +287,10 @@ export const youtubeApi = {
             };
         } catch (error: any) {
             console.error('YouTube API Error in getStream:', error);
+            if (error.message === 'QUOTA_EXCEEDED') {
+                const piped = await pipedApi.getStream(videoId);
+                if (piped) return piped;
+            }
             throw error;
         }
     },
@@ -313,6 +317,10 @@ export const youtubeApi = {
             };
         } catch (error: any) {
             console.error('YouTube API Error in getTrending:', error);
+            if (error.message === 'QUOTA_EXCEEDED') {
+                const pipedItems = await pipedApi.getTrending();
+                return { items: pipedItems };
+            }
             throw error;
         }
     },

@@ -40,10 +40,17 @@
     "web": {
       "bundler": "metro"
     },
+    "plugins": [
+      "expo-updates"
+    ],
     "updates": {
       "enabled": true,
       "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/f51c630a-f698-412b-94cc-a6e7b45bb054"
+      "url": "https://u.expo.dev/f51c630a-f698-412b-94cc-a6e7b45bb054",
+      "checkOnLaunch": "ALWAYS",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "runtimeVersion": {
       "policy": "appVersion"
