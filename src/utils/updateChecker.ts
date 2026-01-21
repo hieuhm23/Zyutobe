@@ -46,10 +46,10 @@ export const checkForUpdates = async (showNoUpdateMessage = false) => {
             Alert.alert('✅ Đã cập nhật', 'Bạn đang sử dụng phiên bản mới nhất của ZyTube!');
         }
         return false;
-    } catch (e) {
+    } catch (e: any) {
         console.error('Error checking for updates:', e);
         if (showNoUpdateMessage) {
-            Alert.alert('Lỗi', 'Không thể kiểm tra bản cập nhật. Vui lòng thử lại sau.');
+            Alert.alert('Lỗi OTA', `Không thể kiểm tra bản cập nhật.\n\nChi tiết: ${e.message || String(e)}`);
         }
         return false;
     }

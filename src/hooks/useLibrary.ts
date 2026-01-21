@@ -59,6 +59,20 @@ export const useLibrary = () => {
         return favorites.some(v => v.url?.includes(videoId));
     };
 
+    const clearHistory = async () => {
+        try {
+            setHistory([]);
+            await AsyncStorage.removeItem('history');
+        } catch (e) { console.error(e); }
+    };
+
+    const clearFavorites = async () => {
+        try {
+            setFavorites([]);
+            await AsyncStorage.removeItem('favorites');
+        } catch (e) { console.error(e); }
+    };
+
     return {
         favorites,
         history,
@@ -66,6 +80,8 @@ export const useLibrary = () => {
         addToHistory,
         toggleFavorite,
         isFavorite,
+        clearHistory,
+        clearFavorites,
         refreshLibrary: loadData
     };
 };

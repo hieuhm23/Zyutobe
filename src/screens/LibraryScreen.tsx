@@ -8,6 +8,7 @@ import {
     Image,
     StatusBar,
     RefreshControl,
+    Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,13 +16,32 @@ import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 import { useLibrary } from '../hooks/useLibrary';
 import pipedApi from '../services/pipedApi';
+import youtubeApi from '../services/youtubeApi';
 import { usePlayer } from '../context/PlayerContext';
 
 const LibraryScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
     const [activeTab, setActiveTab] = useState<'favorites' | 'history' | 'downloads'>('favorites');
-    const { favorites, history, loading, refreshLibrary } = useLibrary();
+    const { favorites, history, loading, refreshLibrary, clearHistory, clearFavorites } = useLibrary();
     const { playVideo } = usePlayer();
+
+    const handleClear = () => {
+        Alert.alert(
+            activeTab === 'favorites' ? 'Xóa mục yêu thích' : 'Xóa lịch sử',
+            `Bạn có chắc chắn muốn xóa toàn bộ ${activeTab === 'favorites' ? 'danh sách yêu thích' : 'lịch sử xem'} không?`,
+            [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                    text: 'Xóa tất cả',
+                    style: 'destructive',
+                    onPress: () => {
+                        if (activeTab === 'favorites') clearFavorites();
+                        else if (activeTab === 'history') clearHistory();
+                    }
+                }
+            ]
+        );
+    };
 
     useFocusEffect(
         useCallback(() => {
@@ -67,7 +87,7 @@ const LibraryScreen = ({ navigation }: any) => {
                     <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} />
                     <View style={styles.durationBadge}>
                         <Text style={styles.durationText}>
-                            {pipedApi.formatDuration(video.duration || 0)}
+                            {youtubeApi.formatDuration(Number(video.duration) || 0)}
                         </Text>
                     </View>
                 </View>
@@ -91,8 +111,13 @@ const LibraryScreen = ({ navigation }: any) => {
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
 
-            <View style={styles.header}>
+            <View style={[styles.header, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
                 <Text style={styles.headerTitle}>Thư viện</Text>
+                {((activeTab === 'favorites' && favorites.length > 0) || (activeTab === 'history' && history.length > 0)) && (
+                    <TouchableOpacity onPress={handleClear} style={{ padding: 5 }}>
+                        <Ionicons name="trash-outline" size={22} color={COLORS.error} />
+                    </TouchableOpacity>
+                )}
             </View>
 
             <View style={styles.tabBar}>

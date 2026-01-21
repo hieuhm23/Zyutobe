@@ -19,8 +19,7 @@
       "bundleIdentifier": "com.zyea.zytube",
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio",
-          "picture-in-picture"
+          "audio"
         ]
       }
     },

@@ -100,11 +100,11 @@ const mapYouTubeItemToVideoItem = (item: any): VideoItem => {
         uploaderUrl: `/channel/${snippet.channelId}`,
         uploaderAvatar: '',
         uploadedDate: new Date(snippet.publishedAt).toLocaleDateString(),
-        duration: 0,
+        duration: item.contentDetails ? youtubeApi.parseISO8601Duration(item.contentDetails.duration) : 0,
         views: statistics ? parseInt(statistics.viewCount) : 0,
         uploaded: new Date(snippet.publishedAt).getTime(),
         uploaderVerified: false,
-        isShort: false,
+        isShort: item.contentDetails ? youtubeApi.parseISO8601Duration(item.contentDetails.duration) < 60 : false,
     };
 };
 
@@ -150,6 +150,46 @@ async function fetchChannelAvatars(items: VideoItem[]): Promise<VideoItem[]> {
     }
 }
 
+// Helper to fetch extra details for search results
+async function fetchVideoDetails(items: VideoItem[]): Promise<VideoItem[]> {
+    const videoIds = items.filter(i => i.type === 'video').map(i => {
+        const parts = i.url.split('v=');
+        return parts.length > 1 ? parts[1] : null;
+    }).filter(id => id);
+
+    if (videoIds.length === 0) return items;
+
+    try {
+        const data = await fetchYouTube('/videos', {
+            part: 'contentDetails,statistics',
+            id: videoIds.join(',')
+        });
+
+        const detailMap = new Map();
+        if (data.items) {
+            data.items.forEach((item: any) => {
+                detailMap.set(item.id, item);
+            });
+        }
+
+        return items.map(item => {
+            const id = item.url.split('v=').pop();
+            const details = detailMap.get(id);
+            if (details) {
+                return {
+                    ...item,
+                    duration: youtubeApi.parseISO8601Duration(details.contentDetails.duration),
+                    views: parseInt(details.statistics.viewCount)
+                };
+            }
+            return item;
+        });
+    } catch (e) {
+        console.warn('Error fetching video details:', e);
+        return items;
+    }
+}
+
 export const youtubeApi = {
     // Search videos
     search: async (query: string, filter: string = 'video'): Promise<SearchResult> => {
@@ -165,6 +205,7 @@ export const youtubeApi = {
         });
 
         let items = data.items.map(mapYouTubeItemToVideoItem);
+        items = await fetchVideoDetails(items);
         items = await fetchChannelAvatars(items);
 
         return {
@@ -188,6 +229,7 @@ export const youtubeApi = {
         });
 
         let items = data.items.map(mapYouTubeItemToVideoItem);
+        items = await fetchVideoDetails(items);
         items = await fetchChannelAvatars(items);
 
         return {
@@ -235,7 +277,7 @@ export const youtubeApi = {
                 uploaderUrl: `/channel/${snippet.channelId}`,
                 uploaderAvatar: 'https://www.gravatar.com/avatar/default?d=mp',
                 thumbnailUrl: snippet.thumbnails.high?.url,
-                duration: 0,
+                duration: item.contentDetails ? youtubeApi.parseISO8601Duration(item.contentDetails.duration) : 0,
                 hls: null, // Required by interface
                 views: parseInt(statistics.viewCount),
                 videoStreams: [],
@@ -253,7 +295,7 @@ export const youtubeApi = {
     getTrending: async (region: string = 'VN', nextPageToken?: string, forceRefresh: boolean = false): Promise<SearchResult> => {
         try {
             const params: any = {
-                part: 'snippet,statistics',
+                part: 'snippet,statistics,contentDetails',
                 chart: 'mostPopular',
                 regionCode: region,
                 maxResults: '20',
@@ -276,12 +318,25 @@ export const youtubeApi = {
     },
 
     // Helpers
+    parseISO8601Duration: (duration: string): number => {
+        const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+        if (!match) return 0;
+        const hours = parseInt(match[1]) || 0;
+        const minutes = parseInt(match[2]) || 0;
+        const seconds = parseInt(match[3]) || 0;
+        return hours * 3600 + minutes * 60 + seconds;
+    },
+
     formatDuration: (seconds: number): string => {
-        if (!seconds) return '';
+        if (!seconds || seconds <= 0) return '0:00';
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
-        const s = seconds % 60;
-        return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+        const s = Math.floor(seconds % 60);
+
+        if (h > 0) {
+            return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        return `${m}:${s.toString().padStart(2, '0')}`;
     },
 
     formatViews: (views: number): string => {

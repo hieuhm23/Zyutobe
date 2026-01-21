@@ -212,7 +212,7 @@ const SearchScreen = ({ route, navigation }: any) => {
                     {!isChannel && !isPlaylist && (
                         <View style={styles.durationBadge}>
                             <Text style={styles.durationText}>
-                                {pipedApi.formatDuration(item.duration || 0)}
+                                {youtubeApi.formatDuration(Number(item.duration) || 0)}
                             </Text>
                         </View>
                     )}
@@ -392,7 +392,7 @@ const SearchScreen = ({ route, navigation }: any) => {
                     ListFooterComponent={
                         loadingMore ? (
                             <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 20 }} />
-                        ) : <View style={{ height: 20 }} />
+                        ) : <View style={{ height: 120 }} />
                     }
                     ListEmptyComponent={
                         !loading && searchQuery ? (

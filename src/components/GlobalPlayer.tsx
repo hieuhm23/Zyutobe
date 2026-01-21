@@ -13,7 +13,8 @@ import {
     ScrollView,
     FlatList,
     Modal,
-    Alert
+    Alert,
+    Platform
 } from 'react-native';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,15 +28,15 @@ import { useSettings } from '../context/SettingsContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const VIDEO_HEIGHT = (SCREEN_WIDTH * 9) / 16;
-const MINI_HEIGHT = 60;
-const TAB_BAR_HEIGHT = 60;
+const MINI_HEIGHT = 64;
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 64;
 
 const GlobalPlayer = () => {
     // Hooks
     const { video, videoId, isMinimized, playVideo, minimizePlayer, maximizePlayer, closePlayer } = usePlayer();
     const insets = useSafeAreaInsets();
     const { addToHistory, isFavorite: checkIsFav, toggleFavorite } = useLibrary();
-    const { autoPlay, backgroundPlay } = useSettings();
+    const { autoPlay, backgroundPlay, autoPiP } = useSettings();
 
     // Favorite state
     const [isFavorited, setIsFavorited] = useState(false);
@@ -76,8 +77,13 @@ const GlobalPlayer = () => {
 
     // Video Settings Modal
     const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [showDescriptionModal, setShowDescriptionModal] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1.0);
     const [isLooping, setIsLooping] = useState(false);
+    const [isSubscribed, setIsSubscribed] = useState(false);
+    const lastTap = useRef<number | null>(null);
+    const [showSeekFeedback, setShowSeekFeedback] = useState<'forward' | 'backward' | null>(null);
+    const seekTimer = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         if (!videoId) return;
@@ -176,12 +182,40 @@ const GlobalPlayer = () => {
         }
     };
 
-    const toggleControls = () => {
+    const toggleControls = (e?: any) => {
         if (isMinimized) {
             maximizePlayer();
-        } else {
-            setShowControls(!showControls);
+            return;
         }
+
+        // Handle double tap
+        const now = Date.now();
+        const DOUBLE_TAP_DELAY = 300;
+
+        if (lastTap.current && (now - lastTap.current) < DOUBLE_TAP_DELAY) {
+            // Double tap detected
+            const x = e.nativeEvent.locationX;
+            if (x < SCREEN_WIDTH / 2) {
+                // Left side - back 10s
+                seek(-10);
+                triggerSeekFeedback('backward');
+            } else {
+                // Right side - forward 10s
+                seek(10);
+                triggerSeekFeedback('forward');
+            }
+            lastTap.current = null; // Reset to avoid triple tap
+            return;
+        }
+
+        lastTap.current = now;
+        setShowControls(!showControls);
+    };
+
+    const triggerSeekFeedback = (type: 'forward' | 'backward') => {
+        setShowSeekFeedback(type);
+        if (seekTimer.current) clearTimeout(seekTimer.current);
+        seekTimer.current = setTimeout(() => setShowSeekFeedback(null), 600);
     };
 
     // Custom Slider Logic
@@ -257,7 +291,7 @@ const GlobalPlayer = () => {
 
     const containerStyle: any = isMinimized ? {
         position: 'absolute',
-        bottom: TAB_BAR_HEIGHT + insets.bottom + 10, // Lift it up above TabBar + Home Indicator
+        bottom: Platform.OS === 'ios' ? TAB_BAR_HEIGHT + 10 : TAB_BAR_HEIGHT + 10,
         left: 10,
         right: 10,
         height: MINI_HEIGHT,
@@ -304,6 +338,8 @@ const GlobalPlayer = () => {
                             resizeMode={isMinimized ? ResizeMode.COVER : ResizeMode.CONTAIN}
                             useNativeControls={false}
                             shouldPlay={true}
+                            // @ts-ignore - allowsPictureInPicture is iOS only but valid in expo-av
+                            allowsPictureInPicture={autoPiP}
                             onPlaybackStatusUpdate={status => {
                                 setStatus(status);
                                 if (status.isLoaded && status.didJustFinish && !status.isLooping && autoPlay) {
@@ -315,6 +351,32 @@ const GlobalPlayer = () => {
                             onReadyForDisplay={() => setVideoReady(true)}
                         />
                     ) : null}
+
+                    {/* Double Tap Seek Feedback */}
+                    {!isMinimized && showSeekFeedback && (
+                        <View style={[StyleSheet.absoluteFill, {
+                            flexDirection: 'row',
+                            justifyContent: showSeekFeedback === 'forward' ? 'flex-end' : 'flex-start',
+                            alignItems: 'center',
+                            zIndex: 2
+                        }]}>
+                            <View style={{
+                                backgroundColor: 'rgba(0,0,0,0.5)',
+                                paddingHorizontal: 30,
+                                paddingVertical: 15,
+                                borderRadius: 50,
+                                marginHorizontal: 20,
+                                alignItems: 'center'
+                            }}>
+                                <Ionicons
+                                    name={showSeekFeedback === 'forward' ? "play-forward" : "play-back"}
+                                    size={32}
+                                    color="#fff"
+                                />
+                                <Text style={{ color: '#fff', fontWeight: 'bold', marginTop: 5 }}>10s</Text>
+                            </View>
+                        </View>
+                    )}
 
                     {/* Visual Placeholder (The "Trick") */}
                     {(!videoReady || loading) && (
@@ -521,20 +583,41 @@ const GlobalPlayer = () => {
                                                     <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }} numberOfLines={1}>{meta.uploaderName}</Text>
                                                 </View>
                                             </View>
-                                            <TouchableOpacity style={{ backgroundColor: '#fff', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 }}>
-                                                <Text style={{ color: '#000', fontWeight: 'bold', fontSize: 12 }}>Đăng ký</Text>
+                                            <TouchableOpacity
+                                                style={{
+                                                    backgroundColor: isSubscribed ? '#333' : '#fff',
+                                                    paddingHorizontal: 15,
+                                                    paddingVertical: 8,
+                                                    borderRadius: 20
+                                                }}
+                                                onPress={() => setIsSubscribed(!isSubscribed)}
+                                            >
+                                                <Text style={{
+                                                    color: isSubscribed ? '#aaa' : '#000',
+                                                    fontWeight: 'bold',
+                                                    fontSize: 12
+                                                }}>
+                                                    {isSubscribed ? 'Đã đăng ký' : 'Đăng ký'}
+                                                </Text>
                                             </TouchableOpacity>
                                         </View>
 
                                         {/* Description Teaser */}
-                                        <TouchableOpacity style={{ marginTop: 15, backgroundColor: '#1a1a1a', padding: 12, borderRadius: 10 }}>
+                                        <TouchableOpacity
+                                            style={{ marginTop: 15, backgroundColor: '#1a1a1a', padding: 12, borderRadius: 10, borderLeftWidth: 3, borderLeftColor: COLORS.primary }}
+                                            onPress={() => setShowDescriptionModal(true)}
+                                        >
+                                            <Text style={{ color: '#fff', fontSize: 13, marginBottom: 5, fontWeight: '600' }}>Mô tả video</Text>
                                             <Text style={{ color: '#aaa', fontSize: 12 }} numberOfLines={2}>
-                                                {meta.description || 'Nhấn để xem mô tả video...'}
+                                                {meta.description || 'Không có mô tả cho video này...'}
                                             </Text>
                                         </TouchableOpacity>
 
                                         {/* Related Videos Header */}
-                                        <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginTop: 20, marginBottom: 10 }}>Next</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 25, marginBottom: 15 }}>
+                                            <View style={{ width: 4, height: 18, backgroundColor: COLORS.primary, borderRadius: 2, marginRight: 8 }} />
+                                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Tiếp theo</Text>
+                                        </View>
                                     </View>
                                 }
                                 renderItem={({ item }) => (
@@ -640,6 +723,44 @@ const GlobalPlayer = () => {
                         </View>
                     </View>
                 </TouchableOpacity>
+            </Modal>
+
+            {/* Description Modal */}
+            <Modal
+                visible={showDescriptionModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowDescriptionModal(false)}
+            >
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
+                    <View style={{ backgroundColor: '#1a1a1a', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '70%', paddingBottom: insets.bottom }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#333' }}>
+                            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>Mô tả video</Text>
+                            <TouchableOpacity onPress={() => setShowDescriptionModal(false)}>
+                                <Ionicons name="close" size={24} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView contentContainerStyle={{ padding: 16 }}>
+                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 10 }}>{meta.title}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+                                <Image source={{ uri: meta.uploaderAvatar || 'https://via.placeholder.com/40' }} style={{ width: 30, height: 30, borderRadius: 15, marginRight: 10 }} />
+                                <Text style={{ color: COLORS.primary, fontWeight: '600' }}>{meta.uploaderName}</Text>
+                            </View>
+                            <View style={{ backgroundColor: '#222', padding: 12, borderRadius: 10, marginBottom: 20 }}>
+                                <Text style={{ color: '#ccc', fontSize: 13, lineHeight: 20 }}>
+                                    {meta.description || 'Không có mô tả chi tiết.'}
+                                </Text>
+                            </View>
+                            {meta.tags && meta.tags.length > 0 && (
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                                    {meta.tags.map((tag: string, i: number) => (
+                                        <Text key={i} style={{ color: COLORS.info, fontSize: 12, marginRight: 10, marginBottom: 5 }}>#{tag}</Text>
+                                    ))}
+                                </View>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
             </Modal>
         </>
     );

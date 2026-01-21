@@ -13,24 +13,40 @@ import SettingsScreen from '../screens/SettingsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
 
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS, FONTS } from '../constants/theme';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const TabNavigator = () => {
+    const insets = useSafeAreaInsets();
+
     return (
         <Tab.Navigator
             screenOptions={{
                 headerShown: false,
                 tabBarStyle: {
-                    backgroundColor: '#141b2d',
-                    borderTopColor: '#2A3550',
+                    backgroundColor: COLORS.surface,
+                    borderTopColor: COLORS.border,
                     borderTopWidth: 1,
-                    height: 60,
-                    paddingBottom: 8,
-                    paddingTop: 8,
+                    height: Platform.OS === 'ios' ? 88 : 64,
+                    paddingBottom: Platform.OS === 'ios' ? insets.bottom : 8,
+                    paddingTop: 12,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: -4 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 10,
+                    elevation: 20,
                 },
-                tabBarActiveTintColor: '#00D26A',
-                tabBarInactiveTintColor: '#5A6A85',
+                tabBarActiveTintColor: COLORS.primary,
+                tabBarInactiveTintColor: COLORS.textTertiary,
+                tabBarLabelStyle: {
+                    fontSize: 11,
+                    fontWeight: '600',
+                    marginTop: 2,
+                },
             }}
         >
             <Tab.Screen

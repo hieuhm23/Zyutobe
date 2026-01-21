@@ -10,6 +10,7 @@ import {
     StatusBar,
     ActivityIndicator,
     RefreshControl,
+    Animated,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +31,7 @@ const HomeScreen = ({ navigation }: any) => {
     const scrollOffset = useRef(0);
 
     const [activeTab, setActiveTab] = useState<TabType>('featured');
+    const logoScale = useRef(new Animated.Value(1)).current;
     const [searchQuery, setSearchQuery] = useState('');
     const [videos, setVideos] = useState<VideoItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -106,6 +108,13 @@ const HomeScreen = ({ navigation }: any) => {
     };
 
     const onRefresh = () => {
+        // Logo pulse animation
+        Animated.sequence([
+            Animated.timing(logoScale, { toValue: 0.9, duration: 100, useNativeDriver: true }),
+            Animated.timing(logoScale, { toValue: 1.1, duration: 150, useNativeDriver: true }),
+            Animated.timing(logoScale, { toValue: 1, duration: 100, useNativeDriver: true }),
+        ]).start();
+
         setRefreshing(true);
         setNextPageToken(null);
 
@@ -177,7 +186,7 @@ const HomeScreen = ({ navigation }: any) => {
                 />
                 <View style={styles.durationBadge}>
                     <Text style={styles.durationText}>
-                        {youtubeApi.formatDuration(item.duration || 0)}
+                        {youtubeApi.formatDuration(Number(item.duration) || 0)}
                     </Text>
                 </View>
             </View>
@@ -208,18 +217,20 @@ const HomeScreen = ({ navigation }: any) => {
             <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
 
             <View style={[styles.header, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-                <TouchableOpacity
-                    style={[styles.logoRow, { marginBottom: 0 }]}
-                    activeOpacity={0.7}
-                    onPress={() => onRefresh()}
-                >
-                    <Image
-                        source={require('../../assets/icon.png')}
-                        style={{ width: 32, height: 32, borderRadius: 6 }}
-                        resizeMode="contain"
-                    />
-                    <Text style={styles.logoText}>ZyTube</Text>
-                </TouchableOpacity>
+                <Animated.View style={{ transform: [{ scale: logoScale }] }}>
+                    <TouchableOpacity
+                        style={[styles.logoRow, { marginBottom: 0 }]}
+                        activeOpacity={0.7}
+                        onPress={() => onRefresh()}
+                    >
+                        <Image
+                            source={require('../../assets/icon.png')}
+                            style={{ width: 34, height: 34, borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary + '30' }}
+                            resizeMode="contain"
+                        />
+                        <Text style={[styles.logoText, { marginLeft: 10 }]}>ZyTube</Text>
+                    </TouchableOpacity>
+                </Animated.View>
 
                 <TouchableOpacity
                     onPress={() => navigation.navigate('Search')}
@@ -256,7 +267,7 @@ const HomeScreen = ({ navigation }: any) => {
                     ListFooterComponent={
                         loading && videos.length > 0 ? (
                             <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 20 }} />
-                        ) : <View style={{ height: 20 }} />
+                        ) : <View style={{ height: 100 }} />
                     }
                     refreshControl={
                         <RefreshControl

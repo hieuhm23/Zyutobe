@@ -108,43 +108,20 @@ const SettingsScreen = () => {
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Backup/Restore Section */}
+                {/* Account Section (Demo) */}
                 <View style={styles.profileCard}>
                     <View style={styles.avatarContainer}>
-                        <Ionicons name="cloud-outline" size={36} color={COLORS.primary} />
+                        <Ionicons name="person-circle-outline" size={40} color={COLORS.primary} />
                     </View>
                     <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>Dữ liệu của bạn</Text>
-                        <Text style={styles.profileSubtext}>Sao lưu & khôi phục</Text>
+                        <Text style={styles.profileName}>Khách (Demo Mode)</Text>
+                        <Text style={styles.profileSubtext}>Đăng nhập để lưu lịch sử đám mây</Text>
                     </View>
-                </View>
-
-                <View style={[styles.settingsCard, { marginBottom: SPACING.l }]}>
                     <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => Alert.alert('Sao lưu', 'Tính năng sao lưu sẽ được triển khai sau.')}
+                        style={styles.loginButton}
+                        onPress={() => Alert.alert('Đăng nhập', 'Tính năng tài khoản & đồng bộ Cloud sẽ sớm ra mắt ở phiên bản tiếp theo!')}
                     >
-                        <View style={[styles.iconContainer, { backgroundColor: '#10B981' + '20' }]}>
-                            <Ionicons name="cloud-upload-outline" size={22} color="#10B981" />
-                        </View>
-                        <View style={styles.settingInfo}>
-                            <Text style={styles.settingTitle}>Sao lưu dữ liệu</Text>
-                            <Text style={styles.settingSubtitle}>Xuất lịch sử, yêu thích ra file</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.settingItem, { borderBottomWidth: 0 }]}
-                        onPress={() => Alert.alert('Khôi phục', 'Tính năng khôi phục sẽ được triển khai sau.')}
-                    >
-                        <View style={[styles.iconContainer, { backgroundColor: '#6366F1' + '20' }]}>
-                            <Ionicons name="cloud-download-outline" size={22} color="#6366F1" />
-                        </View>
-                        <View style={styles.settingInfo}>
-                            <Text style={styles.settingTitle}>Khôi phục dữ liệu</Text>
-                            <Text style={styles.settingSubtitle}>Nhập dữ liệu từ file backup</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                        <Text style={styles.loginButtonText}>Đăng nhập</Text>
                     </TouchableOpacity>
                 </View>
 
