@@ -54,9 +54,6 @@
             "minSdkVersion": 26
           }
         }
-      ],
-      [
-        "react-native-pip-android"
       ]
     ],
     "updates": {

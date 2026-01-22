@@ -18,7 +18,9 @@ import {
     AppState,
     AppStateStatus
 } from 'react-native';
-import PipHandler from 'react-native-pip-android';
+
+// Only import PipHandler on Android (iOS uses native AVPlayer PiP)
+const PipHandler = Platform.OS === 'android' ? require('react-native-pip-android').default : null;
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -106,7 +108,7 @@ const GlobalPlayer = () => {
                 !error
             ) {
                 try {
-                    PipHandler.enterPipMode(300, 170); // 16:9 ratio approximately
+                    PipHandler?.enterPipMode(300, 170); // 16:9 ratio approximately
                     console.log('✅ Entered PiP mode');
                 } catch (e) {
                     console.log('PiP Error:', e);
