@@ -14,8 +14,11 @@ import {
     FlatList,
     Modal,
     Alert,
-    Platform
+    Platform,
+    AppState,
+    AppStateStatus
 } from 'react-native';
+import PipHandler from 'react-native-pip-android';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -84,6 +87,40 @@ const GlobalPlayer = () => {
     const lastTap = useRef<number | null>(null);
     const [showSeekFeedback, setShowSeekFeedback] = useState<'forward' | 'backward' | null>(null);
     const seekTimer = useRef<NodeJS.Timeout | null>(null);
+
+    // Auto PiP when app goes to background (Android)
+    useEffect(() => {
+        if (Platform.OS !== 'android') return;
+
+        const appStateRef = { current: AppState.currentState };
+
+        const handleAppStateChange = (nextAppState: AppStateStatus) => {
+            // When app is going to background and video is playing
+            if (
+                appStateRef.current === 'active' &&
+                (nextAppState === 'inactive' || nextAppState === 'background') &&
+                autoPiP &&
+                videoId &&
+                status.isPlaying &&
+                !loading &&
+                !error
+            ) {
+                try {
+                    PipHandler.enterPipMode(300, 170); // 16:9 ratio approximately
+                    console.log('✅ Entered PiP mode');
+                } catch (e) {
+                    console.log('PiP Error:', e);
+                }
+            }
+            appStateRef.current = nextAppState;
+        };
+
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+        return () => {
+            subscription.remove();
+        };
+    }, [autoPiP, videoId, status.isPlaying, loading, error]);
 
     useEffect(() => {
         if (!videoId) return;
@@ -338,8 +375,15 @@ const GlobalPlayer = () => {
                             resizeMode={isMinimized ? ResizeMode.COVER : ResizeMode.CONTAIN}
                             useNativeControls={false}
                             shouldPlay={true}
-                            // @ts-ignore - allowsPictureInPicture is iOS only but valid in expo-av
+                            // iOS PiP support
+                            // @ts-ignore
                             allowsPictureInPicture={autoPiP}
+                            // @ts-ignore - iOS 14.2+ auto PiP
+                            automaticallyEntersPictureInPicture={autoPiP}
+                            // Poster for smooth transitions
+                            usePoster={true}
+                            posterSource={{ uri: video?.thumbnail || meta.thumbnailUrl || meta.thumbnail }}
+                            posterStyle={{ resizeMode: 'cover' }}
                             onPlaybackStatusUpdate={status => {
                                 setStatus(status);
                                 if (status.isLoaded && status.didJustFinish && !status.isLooping && autoPlay) {
