@@ -90,13 +90,11 @@ const GlobalPlayer = () => {
     const [showSeekFeedback, setShowSeekFeedback] = useState<'forward' | 'backward' | null>(null);
     const seekTimer = useRef<NodeJS.Timeout | null>(null);
 
-    // Auto PiP when app goes to background (Android)
+    // Auto PiP when app goes to background (iOS & Android)
     useEffect(() => {
-        if (Platform.OS !== 'android') return;
-
         const appStateRef = { current: AppState.currentState };
 
-        const handleAppStateChange = (nextAppState: AppStateStatus) => {
+        const handleAppStateChange = async (nextAppState: AppStateStatus) => {
             // When app is going to background and video is playing
             if (
                 appStateRef.current === 'active' &&
@@ -105,11 +103,17 @@ const GlobalPlayer = () => {
                 videoId &&
                 status.isPlaying &&
                 !loading &&
-                !error
+                !error &&
+                videoRef.current
             ) {
                 try {
-                    PipHandler?.enterPipMode(300, 170); // 16:9 ratio approximately
-                    console.log('✅ Entered PiP mode');
+                    if (Platform.OS === 'android') {
+                        // Android: Use PipHandler
+                        PipHandler?.enterPipMode(300, 170);
+                        console.log('✅ Android: Entered PiP mode');
+                    }
+                    // iOS: Native Auto PiP only works from Fullscreen/Native Controls.
+                    // Manual trigger via button is required for Custom UI.
                 } catch (e) {
                     console.log('PiP Error:', e);
                 }

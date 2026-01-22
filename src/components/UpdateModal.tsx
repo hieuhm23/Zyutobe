@@ -28,12 +28,9 @@ const UpdateModal: React.FC<UpdateModalProps> = ({ visible, onDismiss, forceUpda
     const [updating, setUpdating] = useState(false);
 
     const updateInfo: UpdateInfo = {
-        version: '1.1.0',
+        version: '1.0.0',
         changes: [
-            '🎬 Cải thiện trình phát video',
-            '❤️ Thêm nút Like trong Player',
-            '⚙️ Thêm cài đặt tốc độ phát',
-            '🔁 Thêm chế độ lặp video',
+            '🎬 Cải UI/UX Trải nghiệm người dùng',
             '🐛 Sửa các lỗi nhỏ'
         ]
     };
