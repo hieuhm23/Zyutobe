@@ -194,12 +194,12 @@ const GlobalPlayer = () => {
     // Gesture Responder for Video Area
     const videoPanResponder = useRef(
         PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
+            onStartShouldSetPanResponder: () => false, // Let taps pass through to parent TouchableOpacity
             onMoveShouldSetPanResponder: (evt, gestureState) => {
                 const { locationX } = evt.nativeEvent;
                 const width = Dimensions.get('window').width;
                 const isSide = locationX < width * 0.35 || locationX > width * 0.65;
-                const isVertical = Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 2; // Strict vertical
+                const isVertical = Math.abs(gestureState.dy) > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 2;
                 return isSide && isVertical;
             },
             onPanResponderGrant: (evt) => {
@@ -228,11 +228,6 @@ const GlobalPlayer = () => {
             },
             onPanResponderRelease: () => {
                 setGestureMode(null);
-                // Click logic if needed (tap vs swipe)
-                if (Math.abs(touchStartY.current) < 5) {
-                    // Tap detected
-                    if (!isMinimized) setShowControls(!showControls);
-                }
             },
             onPanResponderTerminate: () => setGestureMode(null),
         })
