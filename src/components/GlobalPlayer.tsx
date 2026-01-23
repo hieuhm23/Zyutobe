@@ -23,8 +23,9 @@ import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import * as Brightness from 'expo-brightness';
-import * as ScreenOrientation from 'expo-screen-orientation';
+// DISABLED: These modules cause crash on old builds without native code
+// import * as Brightness from 'expo-brightness';
+// import * as ScreenOrientation from 'expo-screen-orientation';
 import PlayerSettingsModal from './PlayerSettingsModal';
 import { COLORS } from '../constants/theme';
 import pipedApi from '../services/pipedApi';
@@ -225,12 +226,8 @@ const GlobalPlayer = () => {
                 const width = Dimensions.get('window').width;
                 if (touchX < width / 2) {
                     setGestureMode('brightness');
-                    // Safety check for Brightness module
-                    if (Brightness && Brightness.getBrightnessAsync) {
-                        try {
-                            Brightness.getBrightnessAsync().then(v => initialValue.current = v).catch(() => { });
-                        } catch (e) { initialValue.current = 0.5; }
-                    }
+                    // Brightness disabled for OTA stability
+                    initialValue.current = 0.5;
                 } else {
                     setGestureMode('volume');
                     initialValue.current = videoVolume;
@@ -243,10 +240,7 @@ const GlobalPlayer = () => {
 
                 setGestureValue(newValue);
                 if (gestureMode === 'brightness') {
-                    // Safety check
-                    if (Brightness && Brightness.setBrightnessAsync) {
-                        try { Brightness.setBrightnessAsync(newValue).catch(() => { }); } catch (e) { }
-                    }
+                    // Brightness disabled
                 } else {
                     setVideoVolume(newValue);
                 }
@@ -309,24 +303,13 @@ const GlobalPlayer = () => {
     const { width: winWidth, height: winHeight } = useWindowDimensions();
 
     const toggleFullscreen = async () => {
-        try {
-            if (isFullscreen) {
-                if (ScreenOrientation && ScreenOrientation.lockAsync) {
-                    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => { });
-                }
-                setIsFullscreen(false);
-                StatusBar.setHidden(false);
-            } else {
-                if (ScreenOrientation && ScreenOrientation.lockAsync) {
-                    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => { });
-                }
-                setIsFullscreen(true);
-                StatusBar.setHidden(true);
-            }
-        } catch (error) {
-            console.log("Orientation Error (Native Module missing):", error);
-            // Fallback for old builds: Just toggle state UI, ignore rotation
-            setIsFullscreen(!isFullscreen);
+        // Disabled native orientation lock for OTA stability
+        if (isFullscreen) {
+            setIsFullscreen(false);
+            StatusBar.setHidden(false);
+        } else {
+            setIsFullscreen(true);
+            StatusBar.setHidden(true);
         }
     };
 
