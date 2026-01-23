@@ -6,30 +6,25 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const NetworkStatus = () => {
-    const netInfo = useNetInfo();
+    // Safety check: NetInfo hooks might crash if native module missing
+    let netInfo = { isConnected: true };
+    try {
+        netInfo = useNetInfo();
+    } catch (e) {
+        // Fallback fake online state
+        return null;
+    }
+
     const insets = useSafeAreaInsets();
     const translateY = useRef(new Animated.Value(-100)).current;
 
-    // Use a local state to delay the "back online" message disappearance
-    const [statusText, setStatusText] = useState('Đang mất kết nối internet');
-    const [statusColor, setStatusColor] = useState(COLORS.error);
-
     useEffect(() => {
-        if (netInfo.isConnected === false) {
-            // Offline
-            setStatusText('Bạn đang offline');
-            setStatusColor(COLORS.error);
+        if (netInfo && netInfo.isConnected === false) {
             showBanner();
-        } else if (netInfo.isConnected === true) {
-            // Online - if previously shown offline
-            // We can show "Back online" briefly then hide
-            // For now, let's just seek simple behavior: hide when online.
-
-            // Optional: Show "Back online" green banner?
-            // Let's implement a simple "Offline" banner that slides in/out.
+        } else {
             hideBanner();
         }
-    }, [netInfo.isConnected]);
+    }, [netInfo?.isConnected]);
 
     const showBanner = () => {
         Animated.spring(translateY, {
@@ -48,7 +43,7 @@ const NetworkStatus = () => {
         }).start();
     };
 
-    if (netInfo.isConnected === null) return null; // Initial state
+    if (!netInfo || netInfo.isConnected === null || netInfo.isConnected === true) return null;
 
     return (
         <Animated.View style={[
