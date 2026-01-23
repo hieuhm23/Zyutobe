@@ -133,7 +133,7 @@ const GlobalPlayer = () => {
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => false,
-            onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 10 && !isMinimized,
+            onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 10 && !isMinimized && !isFullscreen,
             onPanResponderMove: (_, gesture) => gesture.dy > 0 && translateY.setValue(gesture.dy),
             onPanResponderRelease: (_, gesture) => {
                 if (gesture.dy > 120 || gesture.vy > 0.5) minimizePlayer();
@@ -141,6 +141,19 @@ const GlobalPlayer = () => {
             }
         })
     ).current;
+
+    // Handle Android Back Button
+    useEffect(() => {
+        const backAction = () => {
+            if (isFullscreen) {
+                toggleFullscreen();
+                return true; // Prevent default behavior
+            }
+            return false;
+        };
+        const backHandler = React.BackHandler.addEventListener('hardwareBackPress', backAction);
+        return () => backHandler.remove();
+    }, [isFullscreen]);
 
     useEffect(() => {
         if (videoId) {
@@ -212,7 +225,12 @@ const GlobalPlayer = () => {
                 const width = Dimensions.get('window').width;
                 if (touchX < width / 2) {
                     setGestureMode('brightness');
-                    Brightness.getBrightnessAsync().then(v => initialValue.current = v);
+                    // Safety check for Brightness module
+                    if (Brightness && Brightness.getBrightnessAsync) {
+                        try {
+                            Brightness.getBrightnessAsync().then(v => initialValue.current = v).catch(() => { });
+                        } catch (e) { initialValue.current = 0.5; }
+                    }
                 } else {
                     setGestureMode('volume');
                     initialValue.current = videoVolume;
@@ -225,7 +243,10 @@ const GlobalPlayer = () => {
 
                 setGestureValue(newValue);
                 if (gestureMode === 'brightness') {
-                    Brightness.setBrightnessAsync(newValue);
+                    // Safety check
+                    if (Brightness && Brightness.setBrightnessAsync) {
+                        try { Brightness.setBrightnessAsync(newValue).catch(() => { }); } catch (e) { }
+                    }
                 } else {
                     setVideoVolume(newValue);
                 }
@@ -288,14 +309,24 @@ const GlobalPlayer = () => {
     const { width: winWidth, height: winHeight } = useWindowDimensions();
 
     const toggleFullscreen = async () => {
-        if (isFullscreen) {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-            setIsFullscreen(false);
-            StatusBar.setHidden(false);
-        } else {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-            setIsFullscreen(true);
-            StatusBar.setHidden(true);
+        try {
+            if (isFullscreen) {
+                if (ScreenOrientation && ScreenOrientation.lockAsync) {
+                    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => { });
+                }
+                setIsFullscreen(false);
+                StatusBar.setHidden(false);
+            } else {
+                if (ScreenOrientation && ScreenOrientation.lockAsync) {
+                    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => { });
+                }
+                setIsFullscreen(true);
+                StatusBar.setHidden(true);
+            }
+        } catch (error) {
+            console.log("Orientation Error (Native Module missing):", error);
+            // Fallback for old builds: Just toggle state UI, ignore rotation
+            setIsFullscreen(!isFullscreen);
         }
     };
 
@@ -364,7 +395,7 @@ const GlobalPlayer = () => {
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10, justifyContent: 'center', alignItems: 'center' }]}>
                                 {/* Top Controls */}
                                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', padding: 10 }}>
-                                    <TouchableOpacity onPress={minimizePlayer} style={{ padding: 5 }}>
+                                    <TouchableOpacity onPress={() => isFullscreen ? toggleFullscreen() : minimizePlayer()} style={{ padding: 5 }}>
                                         <Ionicons name="chevron-down" size={32} color="#fff" />
                                     </TouchableOpacity>
                                     <TouchableOpacity onPress={() => setShowSettings(true)} style={{ padding: 5 }}>
@@ -387,24 +418,27 @@ const GlobalPlayer = () => {
 
                                 {/* Bottom Controls */}
                                 <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10 }}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                                        <Text style={{ color: '#fff', fontSize: 12 }}>
-                                            {formatTime(status.positionMillis)} / {formatTime(status.durationMillis)}
-                                        </Text>
-                                        <TouchableOpacity onPress={toggleFullscreen} style={{ padding: 5 }}>
-                                            <Ionicons name={isFullscreen ? "contract-outline" : "scan-outline"} size={24} color="#fff" />
-                                        </TouchableOpacity>
-                                    </View>
+                                    {/* Slider */}
                                     <Slider
                                         style={{ width: '100%', height: 40 }}
                                         minimumValue={0}
                                         maximumValue={status.durationMillis || 0}
                                         value={status.positionMillis || 0}
                                         minimumTrackTintColor={COLORS.primary}
-                                        maximumTrackTintColor="#FFFFFF"
+                                        maximumTrackTintColor="rgba(255,255,255,0.5)"
                                         thumbTintColor={COLORS.primary}
                                         onSlidingComplete={(val) => videoRef.current?.setPositionAsync(val)}
                                     />
+
+                                    {/* Time & Fullscreen Button */}
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 5 }}>
+                                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>
+                                            {formatTime(status.positionMillis)} / {formatTime(status.durationMillis)}
+                                        </Text>
+                                        <TouchableOpacity onPress={toggleFullscreen} style={{ padding: 5 }}>
+                                            <Ionicons name={isFullscreen ? "contract-outline" : "scan-outline"} size={22} color="#fff" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
                             </View>
                         )}
