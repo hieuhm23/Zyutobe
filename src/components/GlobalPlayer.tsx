@@ -18,11 +18,19 @@ import {
     useWindowDimensions
 } from 'react-native';
 
-const PipHandler = Platform.OS === 'android' ? require('react-native-pip-android').default : null;
+const PipHandler = Platform.OS === 'android' ? (() => { try { return require('react-native-pip-android').default; } catch (e) { return null; } })() : null;
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Slider from '@react-native-community/slider';
+
+let Slider: any;
+try {
+    const pkg = require('@react-native-community/slider');
+    Slider = pkg.default || pkg;
+} catch (e) {
+    Slider = (props: any) => <View {...props} style={[props.style, { backgroundColor: 'gray', height: 5 }]} />;
+}
+
 // DISABLED: These modules cause crash on old builds without native code
 // import * as Brightness from 'expo-brightness';
 // import * as ScreenOrientation from 'expo-screen-orientation';
@@ -352,7 +360,6 @@ const GlobalPlayer = () => {
                                 shouldPlay={true}
                                 rate={playbackRate}
                                 volume={videoVolume}
-                                allowsPictureInPicture={autoPiP} // iOS Native PiP
                                 usePoster
                                 posterSource={{ uri: video?.thumbnail || meta.thumbnailUrl || meta.thumbnail }}
                                 onPlaybackStatusUpdate={s => setStatus(s)}
@@ -410,7 +417,7 @@ const GlobalPlayer = () => {
                                         minimumTrackTintColor={COLORS.primary}
                                         maximumTrackTintColor="rgba(255,255,255,0.5)"
                                         thumbTintColor={COLORS.primary}
-                                        onSlidingComplete={(val) => videoRef.current?.setPositionAsync(val)}
+                                        onSlidingComplete={(val: number) => videoRef.current?.setPositionAsync(val)}
                                     />
 
                                     {/* Time & Fullscreen Button */}
