@@ -31,7 +31,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({ visible, onDismiss, forceUpda
         version: '1.0.0',
         changes: [
             '🎬 Cải UI/UX Trải nghiệm người dùng',
-            '🐛 Sửa các lỗi nhỏ'
+            '🐛 Sửa các lỗi nhỏ cho người dùng '
         ]
     };
 

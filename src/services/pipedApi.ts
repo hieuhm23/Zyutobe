@@ -155,27 +155,23 @@ class PipedApi {
 
         for (const instance of instances) {
             try {
-                console.log(`Trying Piped: ${instance}`);
-                const res = await fetchWithTimeout(`${instance}/streams/${videoId}`, {}, 8000);
+                const res = await fetchWithTimeout(`${instance}/streams/${videoId}`, {}, 5000);
                 if (res.ok) {
                     const data = await res.json();
 
-                    // Priority 1: MP4 Video (Most Compatible)
-                    const mp4 = data.videoStreams?.find((s: any) => !s.videoOnly && s.mimeType.includes('mp4'));
-                    if (mp4) {
+                    // Filter and sort video streams by height (quality)
+                    const mp4Streams = (data.videoStreams || [])
+                        .filter((s: any) => !s.videoOnly && s.mimeType.includes('mp4'))
+                        .sort((a: any, b: any) => (b.height || 0) - (a.height || 0));
+
+                    if (mp4Streams.length > 0) {
                         return {
-                            url: mp4.url,
+                            url: mp4Streams[0].url,
                             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
                         };
                     }
 
-                    // Priority 2: HLS (Fallback)
-                    if (data.hls) {
-                        return {
-                            url: data.hls,
-                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-                        };
-                    }
+                    if (data.hls) return { url: data.hls };
                 }
             } catch (e) { }
         }
@@ -277,7 +273,7 @@ class PipedApi {
                     videoId: videoId,
                     playbackContext: {
                         contentPlaybackContext: {
-                            signatureTimestamp: 19747
+                            signatureTimestamp: 21442
                         }
                     }
                 })
@@ -305,23 +301,21 @@ class PipedApi {
 
     // --- ORCHESTRATOR ---
     async getBestStreamUrl(videoId: string): Promise<StreamResult | null> {
-        console.log(`Getting Stream for ${videoId}`);
-
-        // 1. Cobalt (Best Quality)
-        const cobalt = await this.tryCobalt(videoId);
-        if (cobalt) { console.log('✅ Found via Cobalt'); return cobalt; }
-
-        // 2. Android API (Fastest Direct Link)
+        // 1. Android API (Fastest & Direct MP4)
         const android = await this.tryAndroidAPI(videoId);
-        if (android) { console.log('✅ Found via Android API'); return android; }
+        if (android) return android;
 
-        // 3. Piped (Reliable & Fast)
+        // 2. Piped (Reliable Backup)
         const piped = await this.tryPiped(videoId);
-        if (piped) { console.log('✅ Found via Piped'); return piped; }
+        if (piped) return piped;
+
+        // 3. Cobalt (Last resort for quality)
+        const cobalt = await this.tryCobalt(videoId);
+        if (cobalt) return cobalt;
 
         // 4. Invidious (Backup)
         const inv = await this.tryInvidious(videoId);
-        if (inv) { console.log('✅ Found via Invidious'); return inv; }
+        if (inv) return inv;
 
         // Note: IOS API disabled due to player limitations with headers
         /*

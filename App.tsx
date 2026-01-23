@@ -5,6 +5,7 @@ import { PlayerProvider } from './src/context/PlayerContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import GlobalPlayer from './src/components/GlobalPlayer';
 import UpdateModal from './src/components/UpdateModal';
+import NetworkStatus from './src/components/NetworkStatus';
 import SplashScreen from './src/components/SplashScreen';
 import { checkForUpdateSilent } from './src/utils/updateChecker';
 
@@ -46,6 +47,7 @@ export default function App() {
             onDismiss={() => setShowUpdateModal(false)}
             forceUpdate={false}
           />
+          <NetworkStatus />
         </PlayerProvider>
       </SettingsProvider>
     </SafeAreaProvider>

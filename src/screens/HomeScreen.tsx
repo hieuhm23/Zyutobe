@@ -6,12 +6,12 @@ import {
     FlatList,
     TouchableOpacity,
     TextInput,
-    Image,
-    StatusBar,
-    ActivityIndicator,
     RefreshControl,
     Animated,
+    StatusBar,
+    ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
@@ -19,6 +19,7 @@ import pipedApi, { VideoItem } from '../services/pipedApi';
 import youtubeApi from '../services/youtubeApi';
 
 import { usePlayer } from '../context/PlayerContext';
+import VideoSkeleton from '../components/VideoSkeleton';
 
 type TabType = 'featured' | 'trending';
 
@@ -37,7 +38,19 @@ const HomeScreen = ({ navigation }: any) => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-    const [currentTag, setCurrentTag] = useState('video hot thịnh hành');
+    const HOME_TAGS = [
+        'nhạc trẻ remix hot tiktok',
+        'lofi chill nhẹ nhàng',
+        'top hit việt nam 2024',
+        'nhạc edm gây nghiện',
+        'bolero trữ tình hay nhất',
+        'nhạc acoustic thư giãn',
+        'nhạc rap việt mới nhất',
+        'video hot thịnh hành',
+        'hài mới nhất'
+    ];
+
+    const [currentTag, setCurrentTag] = useState(HOME_TAGS[Math.floor(Math.random() * HOME_TAGS.length)]);
 
     // Tab Press Listener (YouTube Style: Scroll to top OR Refresh)
     useEffect(() => {
@@ -57,7 +70,8 @@ const HomeScreen = ({ navigation }: any) => {
     }, [navigation, activeTab]);
 
     useEffect(() => {
-        loadContent();
+        // Force refresh only on mount or tab change to featured
+        loadContent(false, activeTab === 'featured');
     }, [activeTab]);
 
     const loadContent = async (loadMore: boolean = false, forceRefresh: boolean = false, overrideTag?: string) => {
@@ -80,9 +94,9 @@ const HomeScreen = ({ navigation }: any) => {
                     // "Tất cả" - Random Discovery Feed using Search
                     let featData;
                     if (tokenToUse) {
-                        featData = await youtubeApi.searchNextPage(queryTag, tokenToUse);
+                        featData = await youtubeApi.searchNextPage(queryTag, tokenToUse, 'video', forceRefresh);
                     } else {
-                        featData = await youtubeApi.search(queryTag);
+                        featData = await youtubeApi.search(queryTag, 'video', forceRefresh);
                     }
                     newItems = featData.items || [];
                     newToken = featData.nextPageToken || null;
@@ -119,19 +133,7 @@ const HomeScreen = ({ navigation }: any) => {
         setNextPageToken(null);
 
         if (activeTab === 'featured') {
-            // Prioritize Music content (80% music, 20% variety)
-            const tags = [
-                'nhạc trẻ remix hot tiktok',
-                'lofi chill nhẹ nhàng',
-                'top hit việt nam 2024',
-                'nhạc edm gây nghiện',
-                'bolero trữ tình hay nhất',
-                'nhạc acoustic thư giãn',
-                'nhạc rap việt mới nhất',
-                'video hot thịnh hành',
-                'hài mới nhất'
-            ];
-            const newTag = tags[Math.floor(Math.random() * tags.length)];
+            const newTag = HOME_TAGS[Math.floor(Math.random() * HOME_TAGS.length)];
             setCurrentTag(newTag);
             loadContent(false, true, newTag);
         } else {
@@ -182,7 +184,8 @@ const HomeScreen = ({ navigation }: any) => {
                 <Image
                     source={{ uri: item.thumbnail }}
                     style={styles.thumbnail}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    transition={500}
                 />
                 <View style={styles.durationBadge}>
                     <Text style={styles.durationText}>
@@ -195,6 +198,8 @@ const HomeScreen = ({ navigation }: any) => {
                 <Image
                     source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
                     style={styles.channelAvatar}
+                    contentFit="cover"
+                    transition={500}
                 />
 
                 <View style={styles.videoDetails}>
@@ -226,7 +231,7 @@ const HomeScreen = ({ navigation }: any) => {
                         <Image
                             source={require('../../assets/icon.png')}
                             style={{ width: 34, height: 34, borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary + '30' }}
-                            resizeMode="contain"
+                            contentFit="contain"
                         />
                         <Text style={[styles.logoText, { marginLeft: 10 }]}>ZyTube</Text>
                     </TouchableOpacity>
@@ -245,10 +250,11 @@ const HomeScreen = ({ navigation }: any) => {
                 {renderTab('trending', 'Xu Hướng', 'flame')}
             </View>
 
-            {loading && !refreshing ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={COLORS.primary} />
-                    <Text style={styles.loadingText}>Đang tải...</Text>
+            {loading && !refreshing && videos.length === 0 ? (
+                <View style={{ paddingTop: 10 }}>
+                    {[1, 2, 3, 4].map((i) => (
+                        <VideoSkeleton key={i} />
+                    ))}
                 </View>
             ) : (
                 <FlatList

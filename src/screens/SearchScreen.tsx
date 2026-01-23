@@ -7,11 +7,12 @@ import {
     FlatList,
     TouchableOpacity,
     TextInput,
-    Image,
-    StatusBar,
     ActivityIndicator,
     Keyboard,
+    StatusBar,
 } from 'react-native';
+import { Image } from 'expo-image';
+import VideoSkeleton from '../components/VideoSkeleton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
@@ -207,7 +208,8 @@ const SearchScreen = ({ route, navigation }: any) => {
                     <Image
                         source={{ uri: item.thumbnail }}
                         style={isChannel ? { width: '100%', height: '100%' } : styles.thumbnail}
-                        resizeMode="cover"
+                        contentFit="cover"
+                        transition={500}
                     />
                     {!isChannel && !isPlaylist && (
                         <View style={styles.durationBadge}>
@@ -229,6 +231,8 @@ const SearchScreen = ({ route, navigation }: any) => {
                         <Image
                             source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
                             style={styles.channelAvatar}
+                            contentFit="cover"
+                            transition={500}
                         />
                     )}
 
@@ -376,9 +380,10 @@ const SearchScreen = ({ route, navigation }: any) => {
             )}
 
             {loading ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={COLORS.primary} />
-                    <Text style={styles.loadingText}>Đang tìm kiếm...</Text>
+                <View style={{ paddingTop: 10 }}>
+                    {[1, 2, 3, 4, 5].map((i) => (
+                        <VideoSkeleton key={i} />
+                    ))}
                 </View>
             ) : (
                 <FlatList

@@ -22,6 +22,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
     const textOpacity = useRef(new Animated.Value(0)).current;
     const loadingOpacity = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
+    const progressAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
         // Animation sequence
@@ -68,6 +69,15 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
                     useNativeDriver: true,
                 }),
             ])
+        ).start();
+
+        // Loading Bar Animation (Indeterminate)
+        Animated.loop(
+            Animated.timing(progressAnim, {
+                toValue: 1,
+                duration: 1000,
+                useNativeDriver: true,
+            })
         ).start();
 
         // Auto hide after 2.5 seconds
@@ -131,7 +141,19 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
             {/* Loading Indicator */}
             <Animated.View style={[styles.loadingContainer, { opacity: loadingOpacity }]}>
                 <View style={styles.loadingBar}>
-                    <Animated.View style={[styles.loadingProgress]} />
+                    <Animated.View
+                        style={[
+                            styles.loadingProgress,
+                            {
+                                transform: [{
+                                    translateX: progressAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [-150, 150]
+                                    })
+                                }]
+                            }
+                        ]}
+                    />
                 </View>
             </Animated.View>
 
@@ -199,7 +221,7 @@ const styles = StyleSheet.create({
     },
     loadingProgress: {
         height: '100%',
-        width: '60%',
+        width: '50%',
         backgroundColor: COLORS.primary,
         borderRadius: 2,
     },

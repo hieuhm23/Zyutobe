@@ -10,7 +10,7 @@ const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 import pipedApi from './pipedApi'; // Fallback Source
 
-const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 Hours
+const CACHE_TTL = 1 * 60 * 60 * 1000; // 1 Hour
 
 // Helper for calling API with key rotation
 async function fetchYouTube(endpoint: string, params: Record<string, string>, forceRefresh: boolean = false) {
@@ -184,7 +184,7 @@ async function fetchVideoDetails(items: VideoItem[]): Promise<VideoItem[]> {
 
 export const youtubeApi = {
     // Search videos
-    search: async (query: string, filter: string = 'video'): Promise<SearchResult> => {
+    search: async (query: string, filter: string = 'video', forceRefresh: boolean = false): Promise<SearchResult> => {
         try {
             let typeParam = 'video';
             if (filter === 'channels') typeParam = 'channel';
@@ -195,7 +195,7 @@ export const youtubeApi = {
                 q: query,
                 type: typeParam,
                 maxResults: '20',
-            });
+            }, forceRefresh);
 
             let items = data.items.map(mapYouTubeItemToVideoItem);
             items = await fetchVideoDetails(items);
@@ -215,7 +215,7 @@ export const youtubeApi = {
     },
 
     // Search next page
-    searchNextPage: async (query: string, nextpage: string, filter: string = 'video'): Promise<SearchResult> => {
+    searchNextPage: async (query: string, nextpage: string, filter: string = 'video', forceRefresh: boolean = false): Promise<SearchResult> => {
         let typeParam = 'video';
         if (filter === 'channels') typeParam = 'channel';
         if (filter === 'playlists') typeParam = 'playlist';
@@ -226,7 +226,7 @@ export const youtubeApi = {
             type: typeParam,
             pageToken: nextpage,
             maxResults: '20',
-        });
+        }, forceRefresh);
 
         let items = data.items.map(mapYouTubeItemToVideoItem);
         items = await fetchVideoDetails(items);

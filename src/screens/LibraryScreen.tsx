@@ -5,11 +5,11 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    Image,
-    StatusBar,
     RefreshControl,
     Alert,
+    StatusBar,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +18,7 @@ import { useLibrary } from '../hooks/useLibrary';
 import pipedApi from '../services/pipedApi';
 import youtubeApi from '../services/youtubeApi';
 import { usePlayer } from '../context/PlayerContext';
+import VideoSkeleton from '../components/VideoSkeleton';
 
 const LibraryScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
@@ -84,7 +85,7 @@ const LibraryScreen = ({ navigation }: any) => {
                 activeOpacity={0.8}
             >
                 <View style={styles.thumbnailContainer}>
-                    <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} />
+                    <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} contentFit="cover" transition={500} />
                     <View style={styles.durationBadge}>
                         <Text style={styles.durationText}>
                             {youtubeApi.formatDuration(Number(video.duration) || 0)}
@@ -95,6 +96,8 @@ const LibraryScreen = ({ navigation }: any) => {
                     <Image
                         source={{ uri: video.uploaderAvatar || 'https://via.placeholder.com/40' }}
                         style={styles.channelAvatar}
+                        contentFit="cover"
+                        transition={500}
                     />
                     <View style={styles.textContainer}>
                         <Text style={styles.videoTitle} numberOfLines={2}>{video.title}</Text>
@@ -134,7 +137,9 @@ const LibraryScreen = ({ navigation }: any) => {
                 }
             >
                 {activeTab === 'favorites' && (
-                    favorites.length > 0 ? renderVideoList(favorites) : renderEmptyState(
+                    loading && favorites.length === 0 ? (
+                        <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>
+                    ) : favorites.length > 0 ? renderVideoList(favorites) : renderEmptyState(
                         'heart-outline',
                         'Chưa có video yêu thích',
                         'Nhấn ❤️ khi xem video để thêm vào đây'
@@ -142,7 +147,9 @@ const LibraryScreen = ({ navigation }: any) => {
                 )}
 
                 {activeTab === 'history' && (
-                    history.length > 0 ? renderVideoList(history) : renderEmptyState(
+                    loading && history.length === 0 ? (
+                        <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>
+                    ) : history.length > 0 ? renderVideoList(history) : renderEmptyState(
                         'time-outline',
                         'Chưa có lịch sử xem',
                         'Video bạn xem sẽ xuất hiện ở đây'
