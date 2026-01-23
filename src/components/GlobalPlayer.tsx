@@ -14,7 +14,8 @@ import {
     Alert,
     Platform,
     AppState,
-    AppStateStatus
+    AppStateStatus,
+    useWindowDimensions
 } from 'react-native';
 
 const PipHandler = Platform.OS === 'android' ? require('react-native-pip-android').default : null;
@@ -22,6 +23,7 @@ import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import * as Brightness from 'expo-brightness';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlayerSettingsModal from './PlayerSettingsModal';
 import { COLORS } from '../constants/theme';
@@ -65,6 +67,7 @@ const GlobalPlayer = () => {
     const [qualities, setQualities] = useState<{ height: number; url: string }[]>([]);
     const [currentQuality, setCurrentQuality] = useState<string | number>('auto');
     const [showSettings, setShowSettings] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     // Gesture State
     const [gestureMode, setGestureMode] = useState<'volume' | 'brightness' | null>(null);
@@ -199,7 +202,8 @@ const GlobalPlayer = () => {
                 const { locationX } = evt.nativeEvent;
                 const width = Dimensions.get('window').width;
                 const isSide = locationX < width * 0.35 || locationX > width * 0.65;
-                const isVertical = Math.abs(gestureState.dy) > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 2;
+                // Relaxed condition: just needs to be more vertical than horizontal and moved > 5px
+                const isVertical = Math.abs(gestureState.dy) > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
                 return isSide && isVertical;
             },
             onPanResponderGrant: (evt) => {
@@ -281,32 +285,50 @@ const GlobalPlayer = () => {
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
+    const { width: winWidth, height: winHeight } = useWindowDimensions();
+
+    const toggleFullscreen = async () => {
+        if (isFullscreen) {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+            setIsFullscreen(false);
+            StatusBar.setHidden(false);
+        } else {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+            setIsFullscreen(true);
+            StatusBar.setHidden(true);
+        }
+    };
+
     if (!videoId) return null;
+
+    const dynamicVideoWidth = isFullscreen ? winWidth : (isMinimized ? 106 : SCREEN_WIDTH);
+    const dynamicVideoHeight = isFullscreen ? winHeight : (isMinimized ? 60 : VIDEO_HEIGHT + insets.top);
 
     return (
         <Animated.View style={{
             position: 'absolute',
             zIndex: 99999,
-            width: isMinimized ? SCREEN_WIDTH - 20 : SCREEN_WIDTH,
-            height: isMinimized ? MINI_HEIGHT : SCREEN_HEIGHT,
+            width: isMinimized ? SCREEN_WIDTH - 20 : winWidth,
+            height: isMinimized ? MINI_HEIGHT : winHeight,
             backgroundColor: '#1A1A1A',
-            borderRadius: playerBorderRadius,
+            borderRadius: isFullscreen ? 0 : playerBorderRadius,
             marginHorizontal: isMinimized ? 10 : 0,
             overflow: 'hidden',
             top: 0,
-            transform: [{ translateY }],
+            left: 0,
+            transform: [{ translateY: isFullscreen ? 0 : translateY }],
             ...(isMinimized && { elevation: 15, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' })
         }}>
-            <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+            <StatusBar barStyle="light-content" backgroundColor="transparent" translucent hidden={isFullscreen} />
 
             <View style={{ flex: 1, flexDirection: isMinimized ? 'row' : 'column', alignItems: isMinimized ? 'center' : 'stretch' }}>
 
                 {/* VIDEO BOX */}
                 <View
-                    style={{ width: isMinimized ? 106 : SCREEN_WIDTH, height: isMinimized ? 60 : VIDEO_HEIGHT + insets.top, backgroundColor: '#000' }}
+                    style={{ width: dynamicVideoWidth, height: dynamicVideoHeight, backgroundColor: '#000' }}
                     {...(isMinimized ? {} : panResponder.panHandlers)}
                 >
-                    <TouchableOpacity activeOpacity={1} onPress={() => isMinimized ? maximizePlayer() : setShowControls(!showControls)} style={{ width: '100%', height: isMinimized ? 60 : VIDEO_HEIGHT, marginTop: isMinimized ? 0 : insets.top }}>
+                    <TouchableOpacity activeOpacity={1} onPress={() => isMinimized ? maximizePlayer() : setShowControls(!showControls)} style={{ width: '100%', height: '100%', marginTop: (isMinimized || isFullscreen) ? 0 : insets.top }}>
                         {videoUrl && (
                             <Video
                                 ref={videoRef}
@@ -369,8 +391,8 @@ const GlobalPlayer = () => {
                                         <Text style={{ color: '#fff', fontSize: 12 }}>
                                             {formatTime(status.positionMillis)} / {formatTime(status.durationMillis)}
                                         </Text>
-                                        <TouchableOpacity onPress={() => videoRef.current?.presentFullscreenPlayer()} style={{ padding: 5 }}>
-                                            <Ionicons name="scan-outline" size={24} color="#fff" />
+                                        <TouchableOpacity onPress={toggleFullscreen} style={{ padding: 5 }}>
+                                            <Ionicons name={isFullscreen ? "contract-outline" : "scan-outline"} size={24} color="#fff" />
                                         </TouchableOpacity>
                                     </View>
                                     <Slider
@@ -402,7 +424,7 @@ const GlobalPlayer = () => {
                 )}
 
                 {/* FULL PLAYER LIST */}
-                {!isMinimized && (
+                {!isMinimized && !isFullscreen && (
                     <Animated.View style={{ flex: 1, opacity: contentOpacity, backgroundColor: '#0F0F0F' }}>
                         <FlatList
                             data={relatedVideos}
