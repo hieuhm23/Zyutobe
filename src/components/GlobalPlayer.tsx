@@ -21,10 +21,10 @@ import {
 const PipHandler = Platform.OS === 'android' ? require('react-native-pip-android').default : null;
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import * as Brightness from 'expo-brightness';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlayerSettingsModal from './PlayerSettingsModal';
 import { COLORS } from '../constants/theme';
 import pipedApi from '../services/pipedApi';
