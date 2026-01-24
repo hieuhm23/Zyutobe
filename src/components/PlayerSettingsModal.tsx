@@ -11,9 +11,19 @@ interface PlayerSettingsModalProps {
     onSelectQuality: (url: string, height: number) => void;
     currentSpeed: number;
     onSelectSpeed: (speed: number) => void;
+    sleepTimer: number | null; // minutes, null = off
+    onSetSleepTimer: (minutes: number | null) => void;
 }
 
 const SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+const SLEEP_OPTIONS = [
+    { label: 'Tắt hẹn giờ', value: null },
+    { label: '15 phút', value: 15 },
+    { label: '30 phút', value: 30 },
+    { label: '45 phút', value: 45 },
+    { label: '60 phút', value: 60 },
+    { label: 'Kết thúc video', value: -1 }, // Special value for end of track
+];
 
 const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
     visible,
@@ -22,14 +32,22 @@ const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
     currentQuality,
     onSelectQuality,
     currentSpeed,
-    onSelectSpeed
+    onSelectSpeed,
+    sleepTimer,
+    onSetSleepTimer
 }) => {
-    const [viewMode, setViewMode] = React.useState<'main' | 'quality' | 'speed'>('main');
+    const [viewMode, setViewMode] = React.useState<'main' | 'quality' | 'speed' | 'sleep'>('main');
 
     // Reset view mode on close
     React.useEffect(() => {
         if (!visible) setViewMode('main');
     }, [visible]);
+
+    const formatSleepLabel = () => {
+        if (sleepTimer === null) return 'Tắt';
+        if (sleepTimer === -1) return 'Kết thúc video';
+        return `${sleepTimer} phút`;
+    };
 
     const renderMainDiff = () => (
         <View>
@@ -44,6 +62,13 @@ const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
                 <Ionicons name="speedometer-outline" size={24} color="#fff" />
                 <Text style={styles.menuText}>Tốc độ phát</Text>
                 <Text style={styles.valueText}>{currentSpeed}x</Text>
+                <Ionicons name="chevron-forward" size={20} color="#aaa" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => setViewMode('sleep')}>
+                <Ionicons name="timer-outline" size={24} color="#fff" />
+                <Text style={styles.menuText}>Hẹn giờ tắt</Text>
+                <Text style={styles.valueText}>{formatSleepLabel()}</Text>
                 <Ionicons name="chevron-forward" size={20} color="#aaa" />
             </TouchableOpacity>
         </View>
@@ -105,6 +130,34 @@ const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
         </View>
     );
 
+    const renderSleepTimer = () => (
+        <View>
+            <View style={styles.headerRow}>
+                <TouchableOpacity onPress={() => setViewMode('main')}>
+                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Hẹn giờ tắt</Text>
+            </View>
+            <ScrollView style={{ maxHeight: 300 }}>
+                {SLEEP_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                        key={opt.label}
+                        style={styles.subMenuItem}
+                        onPress={() => {
+                            onSetSleepTimer(opt.value);
+                            onClose();
+                        }}
+                    >
+                        {sleepTimer === opt.value && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                        <Text style={[styles.subText, sleepTimer === opt.value && { color: COLORS.primary }]}>
+                            {opt.label}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+        </View>
+    );
+
     return (
         <Modal
             animationType="slide"
@@ -118,6 +171,7 @@ const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
                     {viewMode === 'main' && renderMainDiff()}
                     {viewMode === 'quality' && renderQuality()}
                     {viewMode === 'speed' && renderSpeed()}
+                    {viewMode === 'sleep' && renderSleepTimer()}
                 </View>
             </TouchableOpacity>
         </Modal>

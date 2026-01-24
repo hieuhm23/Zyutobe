@@ -19,6 +19,7 @@ import pipedApi, { VideoItem } from '../services/pipedApi';
 import youtubeApi from '../services/youtubeApi';
 
 import { usePlayer } from '../context/PlayerContext';
+import { useSettings } from '../context/SettingsContext';
 import VideoSkeleton from '../components/VideoSkeleton';
 
 type TabType = 'featured' | 'trending';
@@ -26,6 +27,7 @@ type TabType = 'featured' | 'trending';
 const HomeScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
     const { playVideo } = usePlayer();
+    const { region } = useSettings();
 
     // Refs for Scroll Logic
     const flatListRef = useRef<FlatList>(null);
@@ -70,9 +72,9 @@ const HomeScreen = ({ navigation }: any) => {
     }, [navigation, activeTab]);
 
     useEffect(() => {
-        // Force refresh only on mount or tab change to featured
-        loadContent(false, activeTab === 'featured');
-    }, [activeTab]);
+        // Force refresh on tab change or region change
+        loadContent(false, true);
+    }, [activeTab, region]);
 
     const loadContent = async (loadMore: boolean = false, forceRefresh: boolean = false, overrideTag?: string) => {
         if (loadMore && !nextPageToken) return;
@@ -86,7 +88,7 @@ const HomeScreen = ({ navigation }: any) => {
 
             switch (activeTab) {
                 case 'trending':
-                    const data = await youtubeApi.getTrending('VN', tokenToUse, forceRefresh);
+                    const data = await youtubeApi.getTrending(region, tokenToUse, forceRefresh);
                     newItems = data.items;
                     newToken = data.nextPageToken || null;
                     break;
@@ -372,15 +374,17 @@ const styles = StyleSheet.create({
         fontSize: FONTS.sizes.m,
     },
     videoList: {
-        paddingHorizontal: SPACING.m,
+        paddingHorizontal: 0, // Full width for premium look
         paddingBottom: SPACING.xxl,
     },
     videoCard: {
         marginBottom: SPACING.l,
+        backgroundColor: COLORS.background, // Ensure clean background
     },
     thumbnailContainer: {
-        borderRadius: RADIUS.m,
-        overflow: 'hidden',
+        // Removed borderRadius for generic full-width feel, or keep small if desired
+        // borderRadius: RADIUS.m, 
+        width: '100%',
     },
     thumbnail: {
         width: '100%',
@@ -404,11 +408,13 @@ const styles = StyleSheet.create({
     videoInfo: {
         flexDirection: 'row',
         marginTop: SPACING.m,
+        paddingHorizontal: SPACING.m, // Add padding to info only
+        alignItems: 'flex-start',
     },
     channelAvatar: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 40, // Slightly larger avatar
+        height: 40,
+        borderRadius: 20,
         backgroundColor: COLORS.surface,
     },
     videoDetails: {
@@ -419,12 +425,12 @@ const styles = StyleSheet.create({
         fontSize: FONTS.sizes.m,
         fontWeight: '500',
         color: COLORS.textPrimary,
-        lineHeight: 20,
+        lineHeight: 22, // Better line height
+        marginBottom: 4,
     },
     channelName: {
         fontSize: FONTS.sizes.s,
         color: COLORS.textSecondary,
-        marginTop: 4,
     },
     viewsDate: {
         fontSize: FONTS.sizes.xs,

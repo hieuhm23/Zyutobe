@@ -10,18 +10,36 @@ const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 import pipedApi from './pipedApi'; // Fallback Source
 
-const CACHE_TTL = 1 * 60 * 60 * 1000; // 1 Hour
+// Smart Cache TTL (Optimized for Quota)
+const CACHE_TTL = {
+    TRENDING: 6 * 60 * 60 * 1000,      // 6 Hours - Hot videos don't change often
+    SEARCH: 3 * 60 * 60 * 1000,        // 3 Hours - Search results are stable
+    VIDEO_DETAILS: 12 * 60 * 60 * 1000, // 12 Hours - Video info rarely changes
+    CHANNEL: 24 * 60 * 60 * 1000,      // 24 Hours - Avatars almost never change
+    DEFAULT: 2 * 60 * 60 * 1000,       // 2 Hours - Fallback
+};
 
-// Helper for calling API with key rotation
+// Get appropriate TTL based on endpoint
+function getCacheTTL(endpoint: string): number {
+    if (endpoint.includes('/videos') && endpoint.includes('chart=mostPopular')) return CACHE_TTL.TRENDING;
+    if (endpoint.includes('/search')) return CACHE_TTL.SEARCH;
+    if (endpoint.includes('/videos')) return CACHE_TTL.VIDEO_DETAILS;
+    if (endpoint.includes('/channels')) return CACHE_TTL.CHANNEL;
+    return CACHE_TTL.DEFAULT;
+}
+
+// Helper for calling API with key rotation + Smart Cache
 async function fetchYouTube(endpoint: string, params: Record<string, string>, forceRefresh: boolean = false) {
     const cacheKey = `yt_cache_${endpoint}_${JSON.stringify(params)}`;
+    const ttl = getCacheTTL(endpoint + JSON.stringify(params));
 
     if (!forceRefresh) {
         try {
             const cached = await AsyncStorage.getItem(cacheKey);
             if (cached) {
                 const parsed = JSON.parse(cached);
-                if (Date.now() - parsed.timestamp < CACHE_TTL) {
+                if (Date.now() - parsed.timestamp < ttl) {
+                    console.log(`[Cache HIT] ${endpoint} (TTL: ${ttl / 3600000}h)`);
                     return parsed.data;
                 }
             }
@@ -38,12 +56,13 @@ async function fetchYouTube(endpoint: string, params: Record<string, string>, fo
                 const data = await response.json();
                 try {
                     await AsyncStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data }));
+                    console.log(`[Cache SAVE] ${endpoint} for ${ttl / 3600000}h`);
                 } catch (e) { }
                 return data;
             }
 
             if (response.status === 403) {
-                console.warn(`Key ${key.substring(0, 5)}... quota exceeded, trying next...`);
+                console.warn(`[Quota] Key ${key.substring(0, 5)}... exceeded, trying next...`);
                 continue;
             }
 
@@ -55,7 +74,7 @@ async function fetchYouTube(endpoint: string, params: Record<string, string>, fo
         }
     }
 
-    console.warn('All YouTube API keys failed or exceeded quota. Falling back to Piped.');
+    console.warn('[Fallback] All YouTube API keys exceeded quota. Using Piped.');
     throw new Error('QUOTA_EXCEEDED');
 }
 

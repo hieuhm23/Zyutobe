@@ -6,10 +6,14 @@ interface SettingsContextType {
     backgroundPlay: boolean;
     autoPiP: boolean;
     videoQuality: string;
+    region: string;
     toggleAutoPlay: () => void;
     toggleBackgroundPlay: () => void;
     toggleAutoPiP: () => void;
     setVideoQuality: (quality: string) => void;
+    setRegion: (region: string) => void;
+    sponsorBlockEnabled: boolean;
+    toggleSponsorBlock: () => void;
     clearCache: () => Promise<{ success: boolean; size: string }>;
 }
 
@@ -20,6 +24,8 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     const [backgroundPlay, setBackgroundPlay] = useState(true);
     const [autoPiP, setAutoPiP] = useState(true);
     const [videoQuality, setVideoQualityState] = useState('720p');
+    const [region, setRegionState] = useState('VN');
+    const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState(true);
 
     useEffect(() => {
         loadSettings();
@@ -27,18 +33,22 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
     const loadSettings = async () => {
         try {
-            const keys = ['setting_autoPlay', 'setting_backgroundPlay', 'setting_autoPiP', 'setting_videoQuality'];
+            const keys = ['setting_autoPlay', 'setting_backgroundPlay', 'setting_autoPiP', 'setting_videoQuality', 'setting_region', 'setting_sponsorBlockEnabled'];
             const stores = await AsyncStorage.multiGet(keys);
 
             const valAutoPlay = stores[0][1];
             const valBgPlay = stores[1][1];
             const valPiP = stores[2][1];
             const valQuality = stores[3][1];
+            const valRegion = stores[4][1];
+            const valSponsorBlock = stores[5][1];
 
             if (valAutoPlay !== null) setAutoPlay(valAutoPlay === 'true');
             if (valBgPlay !== null) setBackgroundPlay(valBgPlay === 'true');
             if (valPiP !== null) setAutoPiP(valPiP === 'true');
             if (valQuality !== null) setVideoQualityState(valQuality);
+            if (valRegion !== null) setRegionState(valRegion);
+            if (valSponsorBlock !== null) setSponsorBlockEnabled(valSponsorBlock === 'true');
 
         } catch (e) {
             console.error("Failed to load settings", e);
@@ -68,6 +78,17 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
         await AsyncStorage.setItem('setting_videoQuality', quality);
     };
 
+    const setRegion = async (newRegion: string) => {
+        setRegionState(newRegion);
+        await AsyncStorage.setItem('setting_region', newRegion);
+    };
+
+    const toggleSponsorBlock = async () => {
+        const newValue = !sponsorBlockEnabled;
+        setSponsorBlockEnabled(newValue);
+        await AsyncStorage.setItem('setting_sponsorBlockEnabled', String(newValue));
+    };
+
     const clearCache = async (): Promise<{ success: boolean; size: string }> => {
         try {
             const allKeys = await AsyncStorage.getAllKeys();
@@ -90,10 +111,14 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             backgroundPlay,
             autoPiP,
             videoQuality,
+            region,
             toggleAutoPlay,
             toggleBackgroundPlay,
             toggleAutoPiP,
             setVideoQuality,
+            setRegion,
+            sponsorBlockEnabled,
+            toggleSponsorBlock,
             clearCache
         }}>
             {children}

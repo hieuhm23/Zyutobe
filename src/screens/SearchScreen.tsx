@@ -502,15 +502,17 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
     },
     resultsList: {
-        paddingHorizontal: SPACING.m,
+        paddingHorizontal: 0, // Full width items
         paddingBottom: SPACING.xxl,
     },
+    // --- VIDEO CARD PREMIUM STYLES ---
     videoCard: {
         marginBottom: SPACING.l,
+        backgroundColor: COLORS.background,
     },
     thumbnailContainer: {
-        borderRadius: RADIUS.m,
-        overflow: 'hidden',
+        width: '100%',
+        // No radius
     },
     thumbnail: {
         width: '100%',
@@ -521,57 +523,62 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: SPACING.s,
         right: SPACING.s,
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        paddingHorizontal: SPACING.s,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: RADIUS.xs,
+        borderRadius: 4,
     },
     durationText: {
         color: COLORS.textPrimary,
-        fontSize: FONTS.sizes.xs,
-        fontWeight: '500',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
     videoInfo: {
         flexDirection: 'row',
-        marginTop: SPACING.m,
+        marginTop: 12,
+        paddingHorizontal: SPACING.m, // Add padding for text content
+        alignItems: 'flex-start',
     },
     channelAvatar: {
         width: 36,
         height: 36,
         borderRadius: 18,
-        marginRight: 10,
+        marginRight: 12,
         backgroundColor: COLORS.surface,
     },
     textContainer: {
         flex: 1,
     },
     videoTitle: {
-        fontSize: FONTS.sizes.m,
+        fontSize: 15,
         fontWeight: '500',
         color: COLORS.textPrimary,
-        lineHeight: 20,
+        lineHeight: 22,
+        marginBottom: 4,
     },
     videoMeta: {
-        fontSize: FONTS.sizes.xs,
+        fontSize: 12,
         color: COLORS.textSecondary,
-        marginTop: 4,
     },
+    // ...
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         paddingTop: 100,
+        paddingHorizontal: SPACING.l,
     },
     emptyText: {
         marginTop: SPACING.m,
         color: COLORS.textSecondary,
         fontSize: FONTS.sizes.m,
-        fontWeight: '500',
+        fontWeight: 'bold',
     },
     emptySubtext: {
-        marginTop: SPACING.s,
+        marginTop: 4,
         color: COLORS.textTertiary,
         fontSize: FONTS.sizes.s,
+        textAlign: 'center',
     },
 });
 

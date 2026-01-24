@@ -7,12 +7,14 @@ import {
     TouchableOpacity,
     StatusBar,
     Alert,
-    Image
+    Image,
+    Linking,
+    Platform
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
-
 import { useSettings } from '../context/SettingsContext';
 import { useNavigation } from '@react-navigation/native';
 import { checkForUpdates } from '../utils/updateChecker';
@@ -29,18 +31,44 @@ const SettingsScreen = () => {
         toggleAutoPiP,
         videoQuality,
         setVideoQuality,
+        region,
+        setRegion,
+        sponsorBlockEnabled,
+        toggleSponsorBlock,
         clearCache
     } = useSettings();
 
+    const REGIONS = [
+        { label: 'Việt Nam', value: 'VN' },
+        { label: 'Hoa Kỳ (US)', value: 'US' },
+        { label: 'Hàn Quốc', value: 'KR' },
+        { label: 'Nhật Bản', value: 'JP' },
+        { label: 'Vương Quốc Anh', value: 'GB' },
+    ];
+
+    const handleRegion = () => {
+        Alert.alert(
+            'Chọn quốc gia',
+            'Thay đổi quốc gia để xem các video xu hướng tại đó.',
+            [
+                ...REGIONS.map(r => ({
+                    text: r.label,
+                    onPress: () => setRegion(r.value)
+                })),
+                { text: 'Hủy', style: 'cancel' }
+            ]
+        );
+    };
+
     const handleVideoQuality = () => {
         Alert.alert(
-            'Chất lượng video mặc định',
-            'Chọn chất lượng video:',
+            'Chất lượng mặc định',
+            'Chọn độ phân giải ưu tiên:',
             [
-                { text: '360p', onPress: () => setVideoQuality('360p') },
-                { text: '480p', onPress: () => setVideoQuality('480p') },
-                { text: '720p', onPress: () => setVideoQuality('720p') },
-                { text: '1080p', onPress: () => setVideoQuality('1080p') },
+                { text: '360p (Tiết kiệm)', onPress: () => setVideoQuality('360p') },
+                { text: '480p (Trung bình)', onPress: () => setVideoQuality('480p') },
+                { text: '720p (HD)', onPress: () => setVideoQuality('720p') },
+                { text: '1080p (Full HD)', onPress: () => setVideoQuality('1080p') },
                 { text: 'Hủy', style: 'cancel' }
             ]
         );
@@ -48,19 +76,19 @@ const SettingsScreen = () => {
 
     const handleClearCache = async () => {
         Alert.alert(
-            'Xóa cache',
-            'Bạn có chắc muốn xóa tất cả cache? Điều này sẽ xóa dữ liệu tạm thời.',
+            'Dọn dẹp bộ nhớ',
+            'Xóa bộ nhớ đệm giúp ứng dụng chạy mượt hơn và giải phóng dung lượng.',
             [
-                { text: 'Hủy', style: 'cancel' },
+                { text: 'Để sau', style: 'cancel' },
                 {
-                    text: 'Xóa',
+                    text: 'Xóa ngay',
                     style: 'destructive',
                     onPress: async () => {
                         const result = await clearCache();
                         if (result.success) {
-                            Alert.alert('Thành công', `Đã xóa ${result.size} cache!`);
+                            Alert.alert('Thành công', `Đã giải phóng ${result.size} bộ nhớ!`);
                         } else {
-                            Alert.alert('Lỗi', 'Không thể xóa cache.');
+                            Alert.alert('Lỗi', 'Không thể xóa cache lúc này.');
                         }
                     }
                 }
@@ -68,179 +96,203 @@ const SettingsScreen = () => {
         );
     };
 
-    const renderSettingItem = (
-        icon: string,
-        iconColor: string,
-        title: string,
-        subtitle?: string,
-        isToggle?: boolean,
-        toggleValue?: boolean,
-        onToggle?: () => void,
-        onPress?: () => void
-    ) => (
+    const SettingItem = ({ icon, color, title, subtitle, isToggle, toggleValue, onToggle, onPress, isDestructive }: any) => (
         <TouchableOpacity
             style={styles.settingItem}
             onPress={isToggle ? onToggle : onPress}
+            activeOpacity={0.7}
         >
-            <View style={[styles.iconContainer, { backgroundColor: iconColor + '20' }]}>
-                <Ionicons name={icon as any} size={22} color={iconColor} />
+            <LinearGradient
+                colors={[color, color + '90']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.iconContainer}
+            >
+                <Ionicons name={icon} size={20} color="#fff" />
+            </LinearGradient>
+
+            <View style={styles.settingTextContainer}>
+                <Text style={[styles.settingTitle, isDestructive && { color: COLORS.error }]}>{title}</Text>
+                {subtitle && <Text style={styles.settingSubtitle} numberOfLines={1}>{subtitle}</Text>}
             </View>
-            <View style={styles.settingInfo}>
-                <Text style={styles.settingTitle}>{title}</Text>
-                {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
-            </View>
+
             {isToggle ? (
-                <View style={[styles.toggleBtn, toggleValue && styles.toggleBtnActive]}>
-                    <Text style={styles.toggleText}>{toggleValue ? 'Bật' : 'Tắt'}</Text>
+                <View style={[styles.toggleTrack, toggleValue && { backgroundColor: COLORS.primary }]}>
+                    <View style={[styles.toggleThumb, toggleValue && { transform: [{ translateX: 18 }] }]} />
                 </View>
             ) : (
-                <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
             )}
         </TouchableOpacity>
     );
 
+    const SectionHeader = ({ title }: { title: string }) => (
+        <Text style={styles.sectionHeader}>{title}</Text>
+    );
+
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
 
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Cài đặt</Text>
+            {/* Header Background */}
+            <View style={[styles.fixedHeader, { height: 120 + insets.top }]}>
+                <LinearGradient
+                    colors={[COLORS.primary + '40', COLORS.background]}
+                    style={StyleSheet.absoluteFill}
+                />
             </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Account Section (Demo) */}
+            <ScrollView
+                style={styles.content}
+                contentContainerStyle={{ paddingTop: insets.top + 20, paddingBottom: 100 }}
+                showsVerticalScrollIndicator={false}
+            >
+                {/* Title */}
+                <Text style={styles.screenTitle}>Cài đặt</Text>
+
+                {/* Profile Card */}
                 <View style={styles.profileCard}>
-                    <View style={styles.avatarContainer}>
-                        <Ionicons name="person-circle-outline" size={40} color={COLORS.primary} />
-                    </View>
-                    <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>Khách (Demo Mode)</Text>
-                        <Text style={styles.profileSubtext}>Đăng nhập để lưu lịch sử đám mây</Text>
-                    </View>
-                    <TouchableOpacity
-                        style={styles.loginButton}
-                        onPress={() => Alert.alert('Đăng nhập', 'Tính năng tài khoản & đồng bộ Cloud sẽ sớm ra mắt ở phiên bản tiếp theo!')}
-                    >
-                        <Text style={styles.loginButtonText}>Đăng nhập</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Playback */}
-                <Text style={styles.sectionTitle}>Phát video</Text>
-                <View style={styles.settingsCard}>
-                    {renderSettingItem(
-                        'headset',
-                        COLORS.primary,
-                        'Phát nền',
-                        'Tiếp tục phát khi tắt màn hình',
-                        true,
-                        backgroundPlay,
-                        toggleBackgroundPlay
-                    )}
-                    {renderSettingItem(
-                        'play-circle',
-                        '#FF6B35',
-                        'Tự động phát',
-                        'Phát video tiếp theo tự động',
-                        true,
-                        autoPlay,
-                        toggleAutoPlay
-                    )}
-                    {renderSettingItem(
-                        'albums',
-                        '#8B5CF6',
-                        'Tự động PiP',
-                        'Mở hình trong hình khi thoát',
-                        true,
-                        autoPiP,
-                        toggleAutoPiP
-                    )}
-                </View>
-
-                {/* Data & Storage */}
-                <Text style={styles.sectionTitle}>Dữ liệu & Lưu trữ</Text>
-                <View style={styles.settingsCard}>
-                    {renderSettingItem(
-                        'cloud-download',
-                        '#00B4D8',
-                        'Chất lượng video mặc định',
-                        videoQuality,
-                        false,
-                        false,
-                        undefined,
-                        handleVideoQuality
-                    )}
-                    {renderSettingItem(
-                        'trash',
-                        COLORS.error,
-                        'Xóa cache',
-                        'Xóa dữ liệu tạm thời',
-                        false,
-                        false,
-                        undefined,
-                        handleClearCache
-                    )}
-                </View>
-
-                {/* About */}
-                <Text style={styles.sectionTitle}>Thông tin</Text>
-                <View style={styles.settingsCard}>
-                    {renderSettingItem(
-                        'information-circle',
-                        '#6366F1',
-                        'Phiên bản',
-                        '1.0.0'
-                    )}
-                    {renderSettingItem(
-                        'cloud-download',
-                        COLORS.primary,
-                        'Kiểm tra cập nhật',
-                        'Kiểm tra phiên bản mới',
-                        false,
-                        false,
-                        undefined,
-                        () => checkForUpdates(true)
-                    )}
-                    {renderSettingItem(
-                        'shield-checkmark',
-                        '#10B981',
-                        'Chính sách bảo mật',
-                        undefined,
-                        false,
-                        false,
-                        undefined,
-                        () => navigation.navigate('PrivacyPolicy')
-                    )}
-                    {renderSettingItem(
-                        'document-text',
-                        '#8B5CF6',
-                        'Điều khoản sử dụng',
-                        undefined,
-                        false,
-                        false,
-                        undefined,
-                        () => navigation.navigate('TermsOfService')
-                    )}
-                    {renderSettingItem(
-                        'bug',
-                        '#EF4444',
-                        'Phản hồi & Báo lỗi',
-                        undefined,
-                        false,
-                        false,
-                        undefined,
-                        () => Alert.alert('Phản hồi', 'Cảm ơn bạn đã đóng góp ý kiến!')
-                    )}
-                </View>
-
-                {/* Footer */}
-                <View style={styles.footer}>
-                    <Image
-                        source={require('../../assets/icon.png')}
-                        style={{ width: 32, height: 32, borderRadius: 8, marginBottom: 5 }}
-                        resizeMode="contain"
+                    <LinearGradient
+                        colors={[COLORS.surface, COLORS.surface]}
+                        style={StyleSheet.absoluteFill}
                     />
-                    <Text style={styles.footerTitle}>ZyTube</Text>
+                    <View style={styles.profileContent}>
+                        <View style={styles.avatarBorder}>
+                            <Image
+                                source={{ uri: 'https://ui-avatars.com/api/?name=User&background=random' }}
+                                style={styles.avatar}
+                            />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.profileName}>Khách (Guest)</Text>
+                            <Text style={styles.profileStatus}>Chế độ ẩn danh</Text>
+                        </View>
+                        <TouchableOpacity style={styles.loginBtn} onPress={() => Alert.alert('Thông báo', 'Tính năng đăng nhập đang được phát triển!')}>
+                            <Text style={styles.loginBtnText}>Đăng nhập</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Settings Sections */}
+                <View style={styles.sectionContainer}>
+                    <SectionHeader title="TRẢI NGHIỆM XEM" />
+                    <View style={styles.card}>
+                        <SettingItem
+                            icon="headset"
+                            color={COLORS.primary}
+                            title="Phát nền (Background Play)"
+                            subtitle="Nghe nhạc khi tắt màn hình"
+                            isToggle
+                            toggleValue={backgroundPlay}
+                            onToggle={toggleBackgroundPlay}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="albums"
+                            color="#8B5CF6"
+                            title="Hình trong hình (PiP)"
+                            subtitle="Tự động thu nhỏ video"
+                            isToggle
+                            toggleValue={autoPiP}
+                            onToggle={toggleAutoPiP}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="infinite"
+                            color="#10B981"
+                            title="Tự động phát tiếp"
+                            subtitle="Phát video gợi ý tiếp theo"
+                            isToggle
+                            toggleValue={autoPlay}
+                            onToggle={toggleAutoPlay}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="shield-checkmark"
+                            color="#3B82F6"
+                            title="SponsorBlock"
+                            subtitle="Tự động bỏ qua quảng cáo tài trợ"
+                            isToggle
+                            toggleValue={sponsorBlockEnabled}
+                            onToggle={toggleSponsorBlock}
+                        />
+                    </View>
+
+                    <SectionHeader title="CHẤT LƯỢNG & DỮ LIỆU" />
+                    <View style={styles.card}>
+                        <SettingItem
+                            icon="globe"
+                            color="#10B981"
+                            title="Quốc gia"
+                            subtitle={`Đang chọn: ${REGIONS.find(r => r.value === region)?.label || region}`}
+                            onPress={handleRegion}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="options" // Changed icon to be more relevant
+                            color="#F59E0B"
+                            title="Chất lượng video"
+                            subtitle={`Mặc định: ${videoQuality === 'auto' ? 'Tự động' : videoQuality}`}
+                            onPress={handleVideoQuality}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="trash"
+                            color="#EF4444"
+                            title="Xóa bộ nhớ đệm"
+                            subtitle="Giải phóng dung lượng máy"
+                            onPress={handleClearCache}
+                        />
+                    </View>
+
+                    <SectionHeader title="ỨNG DỤNG" />
+                    <View style={styles.card}>
+                        <SettingItem
+                            icon="cloud-download"
+                            color="#3B82F6"
+                            title="Kiểm tra cập nhật"
+                            subtitle="Phiên bản hiện tại: 1.0.0"
+                            onPress={() => checkForUpdates(true)}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="paper-plane"
+                            color="#229ED9"
+                            title="Liên hệ Admin"
+                            subtitle="Hỗ trợ qua Telegram @Niidios"
+                            onPress={() => Linking.openURL('https://t.me/Niidios')}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="shield-checkmark"
+                            color="#10B981"
+                            title="Chính sách bảo mật"
+                            subtitle="Quyền riêng tư & Dữ liệu"
+                            onPress={() => navigation.navigate('PrivacyPolicy')}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="document-text"
+                            color="#8B5CF6"
+                            title="Điều khoản sử dụng"
+                            subtitle="Quy định khi dùng App"
+                            onPress={() => navigation.navigate('TermsOfService')}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
+                            icon="information-circle"
+                            color="#6366F1"
+                            title="Về ZyTube"
+                            subtitle="Thông tin phiên bản & Tác giả"
+                            onPress={() => Alert.alert('ZyTube v1.0.0', 'Developed by Hieukka for Zyea')}
+                        />
+                    </View>
+                </View>
+
+                {/* Footer Logo */}
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>ZyTube for Zyea</Text>
+                    <Text style={styles.footerVersion}>Version 1.0.0 (Build 2026)</Text>
                 </View>
             </ScrollView>
         </View>
@@ -252,124 +304,164 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.background,
     },
-    header: {
-        paddingHorizontal: SPACING.m,
-        paddingVertical: SPACING.m,
-    },
-    headerTitle: {
-        fontSize: FONTS.sizes.xl,
-        fontWeight: 'bold',
-        color: COLORS.textPrimary,
+    fixedHeader: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: -1,
     },
     content: {
         flex: 1,
         paddingHorizontal: SPACING.m,
     },
-    profileCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.surface,
-        borderRadius: RADIUS.l,
-        padding: SPACING.m,
+    screenTitle: {
+        fontSize: 34,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
         marginBottom: SPACING.l,
     },
-    avatarContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: COLORS.primary + '20',
-        justifyContent: 'center',
+    profileCard: {
+        borderRadius: 20,
+        overflow: 'hidden',
+        marginBottom: SPACING.xl,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)',
+    },
+    profileContent: {
+        padding: SPACING.l,
+        flexDirection: 'row',
         alignItems: 'center',
     },
-    profileInfo: {
-        flex: 1,
-        marginLeft: SPACING.m,
+    avatarBorder: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        borderWidth: 2,
+        borderColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: SPACING.m,
+        padding: 3,
+    },
+    avatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 30,
+        backgroundColor: COLORS.textTertiary,
     },
     profileName: {
-        fontSize: FONTS.sizes.m,
-        fontWeight: '600',
+        fontSize: 18,
+        fontWeight: 'bold',
         color: COLORS.textPrimary,
     },
-    profileSubtext: {
-        fontSize: FONTS.sizes.xs,
+    profileStatus: {
+        fontSize: 13,
         color: COLORS.textSecondary,
         marginTop: 2,
     },
-    loginButton: {
-        backgroundColor: COLORS.primary,
-        paddingHorizontal: SPACING.m,
-        paddingVertical: SPACING.s,
-        borderRadius: RADIUS.full,
+    loginBtn: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
     },
-    loginButtonText: {
-        color: COLORS.background,
-        fontWeight: 'bold',
-        fontSize: FONTS.sizes.s,
-    },
-    sectionTitle: {
-        fontSize: FONTS.sizes.s,
+    loginBtnText: {
+        fontSize: 13,
         fontWeight: '600',
+        color: COLORS.primary,
+    },
+    sectionContainer: {
+        marginBottom: SPACING.l,
+    },
+    sectionHeader: {
+        fontSize: 13,
+        fontWeight: '700',
         color: COLORS.textSecondary,
         marginBottom: SPACING.s,
-        marginTop: SPACING.m,
+        marginLeft: SPACING.s,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        opacity: 0.8,
     },
-    settingsCard: {
+    card: {
         backgroundColor: COLORS.surface,
-        borderRadius: RADIUS.l,
+        borderRadius: 16,
         overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)',
     },
     settingItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: SPACING.m,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+        padding: 16,
     },
     iconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: RADIUS.m,
+        width: 36,
+        height: 36,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
+        marginRight: 16,
     },
-    settingInfo: {
+    settingTextContainer: {
         flex: 1,
-        marginLeft: SPACING.m,
     },
     settingTitle: {
-        fontSize: FONTS.sizes.m,
+        fontSize: 16,
         fontWeight: '500',
         color: COLORS.textPrimary,
     },
     settingSubtitle: {
-        fontSize: FONTS.sizes.xs,
-        color: COLORS.textSecondary,
+        fontSize: 13,
+        color: COLORS.textTertiary,
         marginTop: 2,
     },
-    toggleBtn: {
-        paddingHorizontal: SPACING.m,
-        paddingVertical: SPACING.xs,
-        borderRadius: RADIUS.full,
-        backgroundColor: COLORS.border,
+    divider: {
+        height: 1,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        marginLeft: 68, // Align with text
     },
-    toggleBtnActive: {
-        backgroundColor: COLORS.primary,
+    toggleTrack: {
+        width: 44,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        padding: 2,
     },
-    toggleText: {
-        fontSize: FONTS.sizes.xs,
-        fontWeight: 'bold',
-        color: COLORS.textPrimary,
+    toggleThumb: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: '#fff',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     footer: {
         alignItems: 'center',
-        paddingVertical: SPACING.xxl,
-        opacity: 0.6,
+        paddingVertical: 30,
+        opacity: 0.5,
     },
-    footerTitle: {
-        fontSize: FONTS.sizes.m,
-        fontWeight: '600',
+    footerIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        marginBottom: 10,
+        tintColor: COLORS.textSecondary,
+    },
+    footerText: {
         color: COLORS.textSecondary,
-        marginTop: SPACING.xs,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    footerVersion: {
+        color: COLORS.textTertiary,
+        fontSize: 12,
+        marginTop: 4,
     },
 });
 

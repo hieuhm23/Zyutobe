@@ -13,44 +13,86 @@ import {
     FlatList,
     Alert,
     Platform,
-    AppState,
-    AppStateStatus,
-    useWindowDimensions
+    AppState
 } from 'react-native';
-
-const PipHandler = Platform.OS === 'android' ? (() => { try { return require('react-native-pip-android').default; } catch (e) { return null; } })() : null;
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-let Slider: any;
-try {
-    const pkg = require('@react-native-community/slider');
-    Slider = pkg.default || pkg;
-} catch (e) {
-    Slider = (props: any) => <View {...props} style={[props.style, { backgroundColor: 'gray', height: 5 }]} />;
-}
-
-// DISABLED: These modules cause crash on old builds without native code
-// import * as Brightness from 'expo-brightness';
-// import * as ScreenOrientation from 'expo-screen-orientation';
 import PlayerSettingsModal from './PlayerSettingsModal';
 import { COLORS } from '../constants/theme';
 import pipedApi from '../services/pipedApi';
 import youtubeApi from '../services/youtubeApi';
+import { getSkipSegments, SponsorSegment } from '../services/sponsorBlockApi';
 import { useLibrary } from '../hooks/useLibrary';
 import { usePlayer } from '../context/PlayerContext';
 import { useSettings } from '../context/SettingsContext';
+import DownloadManager from '../services/DownloadManager';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const VIDEO_HEIGHT = (SCREEN_WIDTH * 9) / 16;
 const MINI_HEIGHT = 64;
 
+// --- SMART PIP LOADER ---
+let PipHandler: any = null;
+if (Platform.OS === 'android') {
+    try {
+        PipHandler = require('react-native-pip-android').default;
+    } catch (e) {
+        console.log("PiP Module Native not found - Feature disabled");
+    }
+}
+// ------------------------
+
+// Custom JS Slider (Interactive & Safe)
+const InteractiveSlider = ({ value, maximumValue, onSeek }: { value: number, maximumValue: number, onSeek: (val: number) => void }) => {
+    const widthRef = useRef(0);
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onPanResponderGrant: (evt) => handleTouch(evt.nativeEvent.locationX),
+            onPanResponderMove: (evt) => handleTouch(evt.nativeEvent.locationX),
+        })
+    ).current;
+
+    const handleTouch = (x: number) => {
+        if (widthRef.current > 0 && maximumValue > 0) {
+            const percentage = Math.max(0, Math.min(1, x / widthRef.current));
+            onSeek(percentage * maximumValue);
+        }
+    };
+
+    const percent = maximumValue > 0 ? (value / maximumValue) * 100 : 0;
+
+    return (
+        <View
+            style={{ height: 40, justifyContent: 'center', width: '100%' }}
+            onLayout={(e) => widthRef.current = e.nativeEvent.layout.width}
+            {...panResponder.panHandlers}
+        >
+            <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, overflow: 'hidden' }}>
+                <View style={{ width: `${percent}%`, height: '100%', backgroundColor: COLORS.primary }} />
+            </View>
+            {/* Thumb Circle */}
+            <View style={{
+                position: 'absolute',
+                left: `${percent}%`,
+                marginLeft: -6,
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                backgroundColor: COLORS.primary,
+                transform: [{ translateX: 0 }]
+            }} />
+        </View>
+    );
+};
+
 const GlobalPlayer = () => {
     const { video, videoId, isMinimized, playVideo, minimizePlayer, maximizePlayer, closePlayer } = usePlayer();
     const insets = useSafeAreaInsets();
     const { addToHistory, isFavorite: checkIsFav, toggleFavorite } = useLibrary();
-    const { autoPlay, backgroundPlay, autoPiP } = useSettings();
+    const { autoPlay, backgroundPlay, autoPiP, sponsorBlockEnabled } = useSettings();
 
     const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 94 : 80;
     const SNAP_TOP = 0;
@@ -70,57 +112,121 @@ const GlobalPlayer = () => {
     const [relatedPageToken, setRelatedPageToken] = useState<string | null>(null);
     const [loadingRelated, setLoadingRelated] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1.0);
-    const [videoVolume, setVideoVolume] = useState(1.0);
+    const [skipSegments, setSkipSegments] = useState<SponsorSegment[]>([]);
+    const [lastSkippedUUID, setLastSkippedUUID] = useState<string | null>(null); // Avoid loop skipping
 
     // Settings State
     const [qualities, setQualities] = useState<{ height: number; url: string }[]>([]);
     const [currentQuality, setCurrentQuality] = useState<string | number>('auto');
     const [showSettings, setShowSettings] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
 
-    // Gesture State
-    const [gestureMode, setGestureMode] = useState<'volume' | 'brightness' | null>(null);
-    const [gestureValue, setGestureValue] = useState(0); // For display UI only
-    const touchStartY = useRef(0);
-    const initialValue = useRef(0);
+    // Sleep Timer (Target Timestamp)
+    const [sleepTarget, setSleepTarget] = useState<number | null>(null);
+    // Keep track for UI display
+    const [selectedSleepMinutes, setSelectedSleepMinutes] = useState<number | null>(null);
+
+    const handleSetSleepTimer = (minutes: number | null) => {
+        setSelectedSleepMinutes(minutes);
+        if (minutes) {
+            const target = Date.now() + (minutes * 60 * 1000);
+            setSleepTarget(target);
+            Alert.alert("⏰ Hẹn giờ", `Nhạc sẽ tắt lúc ${new Date(target).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+        } else {
+            setSleepTarget(null);
+            Alert.alert("Thông báo", "Đã hủy hẹn giờ tắt.");
+        }
+    };
+
+    // Fake Fullscreen State (Just UI toggle, no native rotation)
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-    // --- CẤU HÌNH PHÁT NỀN (CRITICAL) ---
+    // Double Tap to Seek State
+    const [seekAnims, setSeekAnims] = useState({ left: 0, right: 0 });
+    const lastTap = useRef<{ time: number, side: 'left' | 'right' | null }>({ time: 0, side: null });
+    const controlsTimeout = useRef<NodeJS.Timeout | null>(null);
+
+    // Download State
+    const [isDownloaded, setIsDownloaded] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState(0);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    // Auto-hide controls after 3 seconds
+    const showControlsWithTimer = () => {
+        setShowControls(true);
+        if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+        controlsTimeout.current = setTimeout(() => {
+            setShowControls(false);
+        }, 3000);
+    };
+
+    const handleTapOnVideo = (side: 'left' | 'right') => {
+        const now = Date.now();
+        const DOUBLE_TAP_DELAY = 300;
+
+        if (lastTap.current.side === side && (now - lastTap.current.time) < DOUBLE_TAP_DELAY) {
+            // Double tap detected - Seek
+            const seekAmount = side === 'left' ? -10 : 10;
+            seek(seekAmount);
+            setSeekAnims(prev => ({ ...prev, [side]: prev[side as keyof typeof prev] + 1 }));
+            setTimeout(() => {
+                setSeekAnims(prev => ({ ...prev, [side]: Math.max(0, prev[side as keyof typeof prev] - 1) }));
+            }, 800);
+
+            // If double tapping, ensure controls stay visible or hidden based on preference
+            // YouTube keeps controls visible during double tap
+            if (!showControls) setShowControls(true);
+
+            lastTap.current = { time: now, side }; // Update time for consecutive taps (triple tap, etc)
+            if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+        } else {
+            // Single tap - Toggle controls INSTANTLY
+            lastTap.current = { time: now, side };
+
+            // Toggle logic
+            if (showControls) {
+                setShowControls(false);
+                if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+            } else {
+                showControlsWithTimer();
+            }
+        }
+    };
+
+    // --- AUTO PIP LOGIC ---
+    useEffect(() => {
+        if (!autoPiP || !PipHandler) return;
+
+        const sub = AppState.addEventListener('change', (nextAppState) => {
+            if (nextAppState === 'background' && videoId && status.isPlaying) {
+                try {
+                    PipHandler.enterPictureInPictureMode();
+                } catch (e) {
+                    console.log("PiP Trigger Failed", e);
+                }
+            }
+        });
+
+        return () => sub.remove();
+    }, [autoPiP, videoId, status.isPlaying]);
+
+    // --- AUDIO CONFIG ---
     useEffect(() => {
         const configAudio = async () => {
             try {
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: false,
-                    staysActiveInBackground: backgroundPlay, // QUAN TRỌNG: Phát khi ẩn app
+                    staysActiveInBackground: backgroundPlay,
                     playsInSilentModeIOS: true,
                     shouldDuckAndroid: true,
                     interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
                     interruptionModeIOS: InterruptionModeIOS.DoNotMix,
                 });
-            } catch (e) { console.log("Audio Config Error", e); }
+            } catch (e) { }
         };
         configAudio();
     }, [backgroundPlay]);
-
-    // --- CẤU HÌNH PIP KHI VUỐT ẨN APP ---
-    useEffect(() => {
-        const handleAppStateChange = async (nextAppState: AppStateStatus) => {
-            if (
-                (nextAppState === 'inactive' || nextAppState === 'background') &&
-                autoPiP && videoId && status.isPlaying && videoRef.current
-            ) {
-                try {
-                    if (Platform.OS === 'android') {
-                        PipHandler?.enterPipMode(300, 170); // Kích hoạt PiP Android
-                    }
-                    // iOS: Tự động kích hoạt PiP nếu allowsPictureInPicture=true
-                } catch (e) { console.log('PiP Error:', e); }
-            }
-        };
-        const subscription = AppState.addEventListener('change', handleAppStateChange);
-        return () => subscription.remove();
-    }, [autoPiP, videoId, status.isPlaying]);
 
     // --- ANIMATIONS ---
     const playerBorderRadius = translateY.interpolate({
@@ -150,19 +256,6 @@ const GlobalPlayer = () => {
             }
         })
     ).current;
-
-    // Handle Android Back Button
-    useEffect(() => {
-        const backAction = () => {
-            if (isFullscreen) {
-                toggleFullscreen();
-                return true; // Prevent default behavior
-            }
-            return false;
-        };
-        const backHandler = React.BackHandler.addEventListener('hardwareBackPress', backAction);
-        return () => backHandler.remove();
-    }, [isFullscreen]);
 
     useEffect(() => {
         if (videoId) {
@@ -194,20 +287,35 @@ const GlobalPlayer = () => {
                     if (info.relatedStreams) setRelatedVideos(info.relatedStreams);
                     if (info.relatedNextPageToken) setRelatedPageToken(info.relatedNextPageToken);
                 }
+
+                // Fetch SponsorBlock segments
+                if (sponsorBlockEnabled) {
+                    getSkipSegments(videoId).then(segments => {
+                        if (isMounted && segments.length > 0) {
+                            console.log('SponsorBlock: Found segments', segments.length);
+                            setSkipSegments(segments);
+                        }
+                    }).catch(e => console.log('SponsorBlock fetch error', e));
+                } else {
+                    setSkipSegments([]);
+                }
             } catch (err) { if (isMounted) setError(true); }
             finally { if (isMounted) setLoading(false); }
         };
         addToHistory(video || { url: `/watch?v=${videoId}`, title: videoId } as any);
+        const checkDownloadStatus = async () => {
+            const downloaded = await DownloadManager.isDownloaded(videoId);
+            setIsDownloaded(downloaded);
+        };
+        checkDownloadStatus();
         initPlayer();
 
-        // Fetch full streams for quality selection
         pipedApi.getStream(videoId).then(info => {
             if (info && info.videoStreams) {
                 const streams = info.videoStreams
                     .filter(s => !s.videoOnly && s.mimeType.includes('mp4'))
                     .map(s => ({ height: s.height || 0, url: s.url }))
                     .sort((a, b) => b.height - a.height);
-                // remove duplicates
                 const unique = streams.filter((v, i, a) => a.findIndex(t => (t.height === v.height)) === i);
                 setQualities(unique);
             }
@@ -216,76 +324,19 @@ const GlobalPlayer = () => {
         return () => { isMounted = false; };
     }, [videoId]);
 
-    // Gesture Responder for Video Area
-    const videoPanResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => false, // Let taps pass through to parent TouchableOpacity
-            onMoveShouldSetPanResponder: (evt, gestureState) => {
-                const { locationX } = evt.nativeEvent;
-                const width = Dimensions.get('window').width;
-                const isSide = locationX < width * 0.35 || locationX > width * 0.65;
-                // Relaxed condition: just needs to be more vertical than horizontal and moved > 5px
-                const isVertical = Math.abs(gestureState.dy) > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
-                return isSide && isVertical;
-            },
-            onPanResponderGrant: (evt) => {
-                touchStartY.current = evt.nativeEvent.locationY;
-                const touchX = evt.nativeEvent.locationX;
-                const width = Dimensions.get('window').width;
-                if (touchX < width / 2) {
-                    setGestureMode('brightness');
-                    // Brightness disabled for OTA stability
-                    initialValue.current = 0.5;
-                } else {
-                    setGestureMode('volume');
-                    initialValue.current = videoVolume;
-                }
-            },
-            onPanResponderMove: (evt, gestureState) => {
-                const dy = gestureState.dy; // Negative is UP
-                const delta = -dy / 250; // Sensitivity
-                let newValue = Math.min(1, Math.max(0, initialValue.current + delta));
-
-                setGestureValue(newValue);
-                if (gestureMode === 'brightness') {
-                    // Brightness disabled
-                } else {
-                    setVideoVolume(newValue);
-                }
-            },
-            onPanResponderRelease: () => {
-                setGestureMode(null);
-            },
-            onPanResponderTerminate: () => setGestureMode(null),
-        })
-    ).current;
-
     const changeQuality = async (url: string, height: number) => {
-        const status = await videoRef.current?.getStatusAsync();
-        const currentPos = status && status.isLoaded ? status.positionMillis : 0;
-        const isPlaying = status && status.isLoaded ? status.isPlaying : true;
-
         setVideoUrl(url);
         setCurrentQuality(height);
-        // Wait for video load then seek
-        // Note: This is simplified, robust implementation needs onReady
     };
-
 
     const loadMoreRelatedVideos = async () => {
         if (loadingRelated || !relatedPageToken || !meta.title) return;
         setLoadingRelated(true);
         try {
             const res = await youtubeApi.searchNextPage(meta.title, relatedPageToken, 'video');
-            if (res.items) {
-                setRelatedVideos(prev => [...prev, ...res.items]);
-            }
+            if (res.items) setRelatedVideos(prev => [...prev, ...res.items]);
             setRelatedPageToken(res.nextPageToken || null);
-        } catch (error) {
-            console.log('Error loading more related:', error);
-        } finally {
-            setLoadingRelated(false);
-        }
+        } catch (error) { } finally { setLoadingRelated(false); }
     };
 
     const togglePlay = async () => {
@@ -303,43 +354,83 @@ const GlobalPlayer = () => {
     const formatTime = (millis: number) => {
         if (!millis) return "00:00";
         const totalSeconds = Math.floor(millis / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
+
+        if (hours > 0) {
+            return `${hours}:${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        }
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
-    const { width: winWidth, height: winHeight } = useWindowDimensions();
+    const toggleFullscreen = () => {
+        setIsFullscreen(!isFullscreen);
+        StatusBar.setHidden(!isFullscreen);
+    };
 
-    const toggleFullscreen = async () => {
-        // Disabled native orientation lock for OTA stability
-        if (isFullscreen) {
-            setIsFullscreen(false);
-            StatusBar.setHidden(false);
-        } else {
-            setIsFullscreen(true);
-            StatusBar.setHidden(true);
+    const handleDownload = async () => {
+        if (isDownloaded) {
+            Alert.alert('Video đã tải', 'Bạn có muốn xóa video này khỏi thiết bị?', [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                    text: 'Xóa',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await DownloadManager.deleteDownload(videoId);
+                        setIsDownloaded(false);
+                        Alert.alert('Đã xóa', 'Video đã được xóa khỏi thư viện.');
+                    }
+                }
+            ]);
+            return;
+        }
+
+        if (!videoUrl) {
+            Alert.alert('Lỗi', 'Không tìm thấy đường dẫn video.');
+            return;
+        }
+
+        setIsDownloading(true);
+        const result = await DownloadManager.downloadVideo(
+            meta,
+            videoUrl,
+            (progress) => setDownloadProgress(progress)
+        );
+
+        setIsDownloading(false);
+        setDownloadProgress(0);
+
+        if (result) {
+            setIsDownloaded(true);
+            Alert.alert('Thành công', 'Video đã được tải xuống thư viện.');
         }
     };
 
     if (!videoId) return null;
 
-    const dynamicVideoWidth = isFullscreen ? winWidth : (isMinimized ? 106 : SCREEN_WIDTH);
-    const dynamicVideoHeight = isFullscreen ? winHeight : (isMinimized ? 60 : VIDEO_HEIGHT + insets.top);
+    // Use safe layout values, fallback to static if hook fails/missing
+    const dynamicVideoWidth = isFullscreen ? SCREEN_HEIGHT : (isMinimized ? 106 : SCREEN_WIDTH);
+    const dynamicVideoHeight = isFullscreen ? SCREEN_WIDTH : (isMinimized ? 60 : VIDEO_HEIGHT + insets.top);
 
     return (
         <Animated.View style={{
             position: 'absolute',
             zIndex: 99999,
-            width: isMinimized ? SCREEN_WIDTH - 20 : winWidth,
-            height: isMinimized ? MINI_HEIGHT : winHeight,
+            width: isFullscreen ? SCREEN_HEIGHT : (isMinimized ? SCREEN_WIDTH - 20 : SCREEN_WIDTH),
+            height: isFullscreen ? SCREEN_WIDTH : (isMinimized ? MINI_HEIGHT : SCREEN_HEIGHT),
             backgroundColor: '#1A1A1A',
             borderRadius: isFullscreen ? 0 : playerBorderRadius,
             marginHorizontal: isMinimized ? 10 : 0,
             overflow: 'hidden',
             top: 0,
             left: 0,
-            transform: [{ translateY: isFullscreen ? 0 : translateY }],
-            ...(isMinimized && { elevation: 15, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' })
+            transform: [{ translateY: isFullscreen ? 0 : translateY }, { rotate: isFullscreen ? '90deg' : '0deg' }], // CSS rotation fallback
+            ...(isFullscreen && {
+                top: (SCREEN_HEIGHT - SCREEN_WIDTH) / 2,
+                left: -(SCREEN_HEIGHT - SCREEN_WIDTH) / 2,
+            }),
+            ...(isMinimized && { elevation: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' })
         }}>
             <StatusBar barStyle="light-content" backgroundColor="transparent" translucent hidden={isFullscreen} />
 
@@ -347,10 +438,15 @@ const GlobalPlayer = () => {
 
                 {/* VIDEO BOX */}
                 <View
-                    style={{ width: dynamicVideoWidth, height: dynamicVideoHeight, backgroundColor: '#000' }}
+                    style={{
+                        width: isMinimized ? 106 : '100%',
+                        height: isMinimized ? 60 : (isFullscreen ? '100%' : VIDEO_HEIGHT + insets.top),
+                        backgroundColor: '#000',
+                        paddingTop: (isMinimized || isFullscreen) ? 0 : insets.top // Move padding to parent View
+                    }}
                     {...(isMinimized ? {} : panResponder.panHandlers)}
                 >
-                    <TouchableOpacity activeOpacity={1} onPress={() => isMinimized ? maximizePlayer() : setShowControls(!showControls)} style={{ width: '100%', height: '100%', marginTop: (isMinimized || isFullscreen) ? 0 : insets.top }}>
+                    <View style={{ width: '100%', height: '100%', position: 'relative' }}>
                         {videoUrl && (
                             <Video
                                 ref={videoRef}
@@ -359,20 +455,85 @@ const GlobalPlayer = () => {
                                 resizeMode={isMinimized ? ResizeMode.COVER : ResizeMode.CONTAIN}
                                 shouldPlay={true}
                                 rate={playbackRate}
-                                volume={videoVolume}
                                 usePoster
+                                allowsPictureInPicture={true}
+                                startsPictureInPictureAutomatically={autoPiP}
                                 posterSource={{ uri: video?.thumbnail || meta.thumbnailUrl || meta.thumbnail }}
-                                onPlaybackStatusUpdate={s => setStatus(s)}
+                                onPlaybackStatusUpdate={s => {
+                                    setStatus(s);
+                                    if (sleepTarget && s.isLoaded && s.isPlaying && Date.now() >= sleepTarget) {
+                                        videoRef.current?.pauseAsync();
+                                        setSleepTarget(null);
+                                        setSelectedSleepMinutes(null);
+                                    }
+                                    // Auto-Play Next
+                                    if (s.isLoaded && s.didJustFinish && autoPlay && relatedVideos.length > 0) {
+                                        const nextVideo = relatedVideos[0];
+                                        if (nextVideo) {
+                                            playVideo(nextVideo);
+                                        }
+                                    }
+
+                                    // SponsorBlock Logic
+                                    if (s.isLoaded && s.isPlaying && skipSegments.length > 0) {
+                                        const currentTime = s.positionMillis / 1000;
+                                        for (const seg of skipSegments) {
+                                            if (currentTime >= seg.segment[0] && currentTime < seg.segment[1]) {
+                                                if (lastSkippedUUID !== seg.UUID) {
+                                                    // SKIP
+                                                    console.log(`Skipping ${seg.category} from ${seg.segment[0]} to ${seg.segment[1]}`);
+                                                    videoRef.current?.setPositionAsync(seg.segment[1] * 1000);
+                                                    setLastSkippedUUID(seg.UUID);
+
+                                                    // UI Feedback
+                                                    Alert.alert('⏩ SponsorBlock', `Skipped ${seg.category}`);
+                                                }
+                                                break; // Only handle one segment at a time
+                                            }
+                                        }
+                                    }
+                                }}
                                 onReadyForDisplay={() => setVideoReady(true)}
                             />
                         )}
 
-                        {/* Gesture Overlay (For Brightness/Volume) */}
+                        {/* Tap Overlays - Handle Single & Double Tap */}
                         {!isMinimized && videoReady && (
-                            <View
-                                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 5 }}
-                                {...videoPanResponder.panHandlers}
+                            <View style={styles.tapContainer} pointerEvents="box-none">
+                                <TouchableOpacity
+                                    activeOpacity={1}
+                                    style={styles.tapSide}
+                                    onPress={() => handleTapOnVideo('left')}
+                                />
+                                <TouchableOpacity
+                                    activeOpacity={1}
+                                    style={styles.tapSide}
+                                    onPress={() => handleTapOnVideo('right')}
+                                />
+                            </View>
+                        )}
+
+                        {/* Tap overlay for minimized state */}
+                        {isMinimized && (
+                            <TouchableOpacity
+                                activeOpacity={1}
+                                onPress={maximizePlayer}
+                                style={StyleSheet.absoluteFill}
                             />
+                        )}
+
+                        {/* Seek Indicators */}
+                        {seekAnims.left > 0 && (
+                            <View style={[styles.seekIndicator, { left: '15%' }]}>
+                                <Ionicons name="play-back" size={30} color="white" />
+                                <Text style={styles.seekText}>10s</Text>
+                            </View>
+                        )}
+                        {seekAnims.right > 0 && (
+                            <View style={[styles.seekIndicator, { right: '15%' }]}>
+                                <Ionicons name="play-forward" size={30} color="white" />
+                                <Text style={styles.seekText}>10s</Text>
+                            </View>
                         )}
 
                         {(!videoReady || loading) && (
@@ -382,57 +543,70 @@ const GlobalPlayer = () => {
                         )}
 
                         {!isMinimized && showControls && videoReady && (
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10, justifyContent: 'center', alignItems: 'center' }]}>
-                                {/* Top Controls */}
-                                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', padding: 10 }}>
-                                    <TouchableOpacity onPress={() => isFullscreen ? toggleFullscreen() : minimizePlayer()} style={{ padding: 5 }}>
-                                        <Ionicons name="chevron-down" size={32} color="#fff" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => setShowSettings(true)} style={{ padding: 5 }}>
-                                        <Ionicons name="settings-outline" size={28} color="#fff" />
-                                    </TouchableOpacity>
-                                </View>
+                            <View style={[StyleSheet.absoluteFill, { zIndex: 10 }]} pointerEvents="box-none">
+                                {/* Background Dimmer - Visual Only, allow taps to pass through to Tap Overlays */}
+                                <View
+                                    style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
+                                    pointerEvents="none"
+                                />
 
-                                {/* Center Controls */}
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 40 }}>
-                                    <TouchableOpacity onPress={() => seek(-10)}>
-                                        <Ionicons name="play-back" size={35} color="#fff" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={togglePlay}>
-                                        <Ionicons name={status.isPlaying ? "pause-circle" : "play-circle"} size={75} color="#fff" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => seek(10)}>
-                                        <Ionicons name="play-forward" size={35} color="#fff" />
-                                    </TouchableOpacity>
-                                </View>
-
-                                {/* Bottom Controls */}
-                                <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10 }}>
-                                    {/* Slider */}
-                                    <Slider
-                                        style={{ width: '100%', height: 40 }}
-                                        minimumValue={0}
-                                        maximumValue={status.durationMillis || 0}
-                                        value={status.positionMillis || 0}
-                                        minimumTrackTintColor={COLORS.primary}
-                                        maximumTrackTintColor="rgba(255,255,255,0.5)"
-                                        thumbTintColor={COLORS.primary}
-                                        onSlidingComplete={(val: number) => videoRef.current?.setPositionAsync(val)}
-                                    />
-
-                                    {/* Time & Fullscreen Button */}
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 5 }}>
-                                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>
-                                            {formatTime(status.positionMillis)} / {formatTime(status.durationMillis)}
-                                        </Text>
-                                        <TouchableOpacity onPress={toggleFullscreen} style={{ padding: 5 }}>
-                                            <Ionicons name={isFullscreen ? "contract-outline" : "scan-outline"} size={22} color="#fff" />
+                                {/* Interactive Controls Container - Sits ON TOP of dimmer */}
+                                <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                                    {/* Top Bar */}
+                                    <View style={{ position: 'absolute', top: 10, left: 10, right: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} pointerEvents="box-none">
+                                        <TouchableOpacity onPress={() => isFullscreen ? toggleFullscreen() : minimizePlayer()} style={{ padding: 5 }}>
+                                            <Ionicons name="chevron-down" size={28} color="#fff" />
                                         </TouchableOpacity>
+
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                            <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.badge}>
+                                                <Text style={styles.badgeText}>{currentQuality === 'auto' ? 'Auto' : `${currentQuality}p`}</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.badge}>
+                                                <Text style={styles.badgeText}>{playbackRate}x</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => setShowSettings(true)} style={{ padding: 5 }}>
+                                                <Ionicons name="settings-outline" size={24} color="#fff" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+
+                                    {/* Center Controls */}
+                                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 50 }} pointerEvents="box-none">
+                                        <TouchableOpacity onPress={() => seek(-10)}>
+                                            <Ionicons name="play-skip-back" size={32} color="#fff" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={togglePlay} style={styles.playCenterBtn}>
+                                            <Ionicons name={status.isPlaying ? "pause" : "play"} size={45} color="#000" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => seek(10)}>
+                                            <Ionicons name="play-skip-forward" size={32} color="#fff" />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {/* Bottom Bar */}
+                                    <View style={{ position: 'absolute', bottom: isFullscreen ? 30 : 5, left: 10, right: 10 }} pointerEvents="box-none">
+                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                            <Text style={styles.timeLabel}>{formatTime(status.positionMillis)}</Text>
+                                            <View style={{ flex: 1, marginHorizontal: 8 }}>
+                                                <InteractiveSlider
+                                                    value={status.positionMillis || 0}
+                                                    maximumValue={status.durationMillis || 0}
+                                                    onSeek={(val) => videoRef.current?.setPositionAsync(val)}
+                                                />
+                                            </View>
+                                            <Text style={styles.timeLabel}>
+                                                {'-' + formatTime((status.durationMillis || 0) - (status.positionMillis || 0))}
+                                            </Text>
+                                            <TouchableOpacity onPress={toggleFullscreen} style={{ padding: 8, marginLeft: 5 }}>
+                                                <Ionicons name={isFullscreen ? "contract-outline" : "scan-outline"} size={20} color="#fff" />
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
                                 </View>
                             </View>
                         )}
-                    </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* MINI PLAYER CONTROLS */}
@@ -467,6 +641,20 @@ const GlobalPlayer = () => {
                                             <Ionicons name="share-social-outline" size={24} color="#fff" />
                                             <Text style={{ color: '#fff', fontSize: 11, marginTop: 4 }}>Chia sẻ</Text>
                                         </TouchableOpacity>
+
+                                        <TouchableOpacity style={{ alignItems: 'center', marginRight: 35 }} onPress={handleDownload} disabled={isDownloading}>
+                                            {isDownloading ? (
+                                                <View style={{ alignItems: 'center' }}>
+                                                    <ActivityIndicator size="small" color={COLORS.primary} />
+                                                    <Text style={{ color: COLORS.primary, fontSize: 10, marginTop: 4 }}>{Math.round(downloadProgress * 100)}%</Text>
+                                                </View>
+                                            ) : (
+                                                <>
+                                                    <Ionicons name={isDownloaded ? "checkmark-circle" : "download-outline"} size={24} color={isDownloaded ? COLORS.primary : "#fff"} />
+                                                    <Text style={{ color: isDownloaded ? COLORS.primary : '#fff', fontSize: 11, marginTop: 4 }}>{isDownloaded ? 'Đã tải' : 'Tải về'}</Text>
+                                                </>
+                                            )}
+                                        </TouchableOpacity>
                                     </View>
                                     <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginTop: 15 }}>Tiếp theo</Text>
                                 </View>
@@ -488,14 +676,6 @@ const GlobalPlayer = () => {
                 )}
             </View>
 
-            {/* Gesture Feedback UI */}
-            {gestureMode && (
-                <View style={{ position: 'absolute', top: '40%', left: '40%', backgroundColor: 'rgba(0,0,0,0.7)', padding: 20, borderRadius: 10, alignItems: 'center' }}>
-                    <Ionicons name={gestureMode === 'volume' ? 'volume-high' : 'sunny'} size={30} color="#fff" />
-                    <Text style={{ color: '#fff', marginTop: 10, fontWeight: 'bold' }}>{Math.round(gestureValue * 100)}%</Text>
-                </View>
-            )}
-
             <PlayerSettingsModal
                 visible={showSettings}
                 onClose={() => setShowSettings(false)}
@@ -504,9 +684,64 @@ const GlobalPlayer = () => {
                 onSelectQuality={changeQuality}
                 currentSpeed={playbackRate}
                 onSelectSpeed={(s) => setPlaybackRate(s)}
+                sleepTimer={selectedSleepMinutes}
+                onSetSleepTimer={handleSetSleepTimer}
             />
-        </Animated.View>
+        </Animated.View >
     );
 };
 
 export default GlobalPlayer;
+
+const styles = StyleSheet.create({
+    tapContainer: {
+        ...StyleSheet.absoluteFillObject,
+        flexDirection: 'row',
+        zIndex: 5,
+    },
+    tapSide: {
+        flex: 1,
+    },
+    seekIndicator: {
+        position: 'absolute',
+        top: '40%',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 20,
+    },
+    seekText: {
+        color: 'white',
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginTop: 4,
+    },
+    badge: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 4
+    },
+    badgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600'
+    },
+    playCenterBtn: {
+        width: 65,
+        height: 65,
+        borderRadius: 33,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    timeLabel: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '500',
+        minWidth: 45
+    }
+});

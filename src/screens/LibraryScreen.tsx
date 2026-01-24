@@ -18,13 +18,20 @@ import { useLibrary } from '../hooks/useLibrary';
 import pipedApi from '../services/pipedApi';
 import youtubeApi from '../services/youtubeApi';
 import { usePlayer } from '../context/PlayerContext';
+import DownloadManager, { DownloadedVideo } from '../services/DownloadManager';
 import VideoSkeleton from '../components/VideoSkeleton';
 
 const LibraryScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
     const [activeTab, setActiveTab] = useState<'favorites' | 'history' | 'downloads'>('favorites');
     const { favorites, history, loading, refreshLibrary, clearHistory, clearFavorites } = useLibrary();
+    const [downloads, setDownloads] = useState<DownloadedVideo[]>([]);
     const { playVideo } = usePlayer();
+
+    const loadDownloads = async () => {
+        const data = await DownloadManager.getDownloads();
+        setDownloads(data);
+    };
 
     const handleClear = () => {
         Alert.alert(
@@ -38,6 +45,10 @@ const LibraryScreen = ({ navigation }: any) => {
                     onPress: () => {
                         if (activeTab === 'favorites') clearFavorites();
                         else if (activeTab === 'history') clearHistory();
+                        else if (activeTab === 'downloads') {
+                            // Clear all downloads logic if needed, or just warn
+                            Alert.alert('Thông báo', 'Vui lòng xóa từng video một.');
+                        }
                     }
                 }
             ]
@@ -47,6 +58,7 @@ const LibraryScreen = ({ navigation }: any) => {
     useFocusEffect(
         useCallback(() => {
             refreshLibrary();
+            loadDownloads();
         }, [])
     );
 
@@ -81,7 +93,18 @@ const LibraryScreen = ({ navigation }: any) => {
             <TouchableOpacity
                 key={index + video.url}
                 style={styles.videoCard}
-                onPress={() => playVideo(video)}
+                onPress={() => {
+                    if (activeTab === 'downloads') {
+                        // Play local file
+                        playVideo({
+                            ...video,
+                            url: (video as DownloadedVideo).localUri || video.url,
+                            isLocal: true
+                        });
+                    } else {
+                        playVideo(video);
+                    }
+                }}
                 activeOpacity={0.8}
             >
                 <View style={styles.thumbnailContainer}>
@@ -102,13 +125,32 @@ const LibraryScreen = ({ navigation }: any) => {
                     <View style={styles.textContainer}>
                         <Text style={styles.videoTitle} numberOfLines={2}>{video.title}</Text>
                         <Text style={styles.channelName}>
-                            {video.uploaderName} • {pipedApi.formatViews(video.views || 0)}
+                            {video.uploaderName} • {activeTab === 'downloads' ? 'Đã tải xuống' : pipedApi.formatViews(video.views || 0)}
                         </Text>
                     </View>
+                    {activeTab === 'downloads' && (
+                        <TouchableOpacity style={{ padding: 10 }} onPress={() => handleDeleteDownload(video)}>
+                            <Ionicons name="trash-outline" size={20} color={COLORS.error} />
+                        </TouchableOpacity>
+                    )}
                 </View>
             </TouchableOpacity>
         ))
     );
+
+    const handleDeleteDownload = (video: DownloadedVideo) => {
+        Alert.alert('Xóa video', `Bạn muốn xóa video "${video.title}"?`, [
+            { text: 'Hủy', style: 'cancel' },
+            {
+                text: 'Xóa',
+                style: 'destructive',
+                onPress: async () => {
+                    await DownloadManager.deleteDownload(video.url);
+                    loadDownloads();
+                }
+            }
+        ]);
+    };
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -156,10 +198,12 @@ const LibraryScreen = ({ navigation }: any) => {
                     )
                 )}
 
-                {activeTab === 'downloads' && renderEmptyState(
-                    'download-outline',
-                    'Chưa có video đã tải',
-                    'Tải video để xem offline'
+                {activeTab === 'downloads' && (
+                    downloads.length > 0 ? renderVideoList(downloads) : renderEmptyState(
+                        'download-outline',
+                        'Chưa có video đã tải',
+                        'Tải video để xem offline'
+                    )
                 )}
 
                 <View style={{ height: 100 }} />
@@ -187,6 +231,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         paddingHorizontal: SPACING.m,
         marginBottom: SPACING.m,
+        paddingBottom: SPACING.s, // Add breathing room
     },
     tab: {
         flexDirection: 'row',
@@ -196,16 +241,17 @@ const styles = StyleSheet.create({
         borderRadius: RADIUS.full,
         backgroundColor: COLORS.surface,
         marginRight: SPACING.s,
+        borderWidth: 1,
+        borderColor: 'transparent', // Prepare for active border
     },
     tabActive: {
-        backgroundColor: COLORS.primary + '20',
-        borderWidth: 1,
+        backgroundColor: COLORS.primary + '20', // 20% opacity
         borderColor: COLORS.primary,
     },
     tabText: {
         fontSize: FONTS.sizes.s,
         color: COLORS.textSecondary,
-        fontWeight: '500',
+        fontWeight: '600',
         marginLeft: SPACING.xs,
     },
     tabTextActive: {
@@ -214,40 +260,44 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        paddingHorizontal: SPACING.m,
+        // Removed default padding to allow full-width items
     },
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         paddingTop: 100,
+        paddingHorizontal: SPACING.l,
     },
     emptyIconContainer: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+        width: 100,
+        height: 100,
+        borderRadius: 50,
         backgroundColor: COLORS.surface,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: SPACING.l,
+        marginBottom: SPACING.m,
     },
     emptyTitle: {
         fontSize: FONTS.sizes.l,
-        fontWeight: '600',
+        fontWeight: 'bold',
         color: COLORS.textPrimary,
-        marginBottom: SPACING.s,
+        marginBottom: SPACING.xs,
     },
     emptySubtitle: {
         fontSize: FONTS.sizes.s,
         color: COLORS.textSecondary,
         textAlign: 'center',
+        lineHeight: 20,
     },
+    // --- VIDEO CARD STYLES (MATCHING HOME) ---
     videoCard: {
         marginBottom: SPACING.l,
+        backgroundColor: COLORS.background,
     },
     thumbnailContainer: {
-        borderRadius: RADIUS.m,
-        overflow: 'hidden',
+        width: '100%',
+        // No border radius for premium feel
     },
     thumbnail: {
         width: '100%',
@@ -258,40 +308,42 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: SPACING.s,
         right: SPACING.s,
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        paddingHorizontal: SPACING.s,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: RADIUS.xs,
+        borderRadius: 4,
     },
     durationText: {
         color: COLORS.textPrimary,
-        fontSize: FONTS.sizes.xs,
-        fontWeight: '500',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
     videoInfo: {
         flexDirection: 'row',
-        marginTop: SPACING.m,
+        marginTop: 12, // More spacing
+        paddingHorizontal: SPACING.m, // Content padding
+        alignItems: 'flex-start',
     },
     channelAvatar: {
         width: 36,
         height: 36,
         borderRadius: 18,
-        marginRight: 10,
+        marginRight: 12,
         backgroundColor: COLORS.surface,
     },
     textContainer: {
         flex: 1,
     },
     videoTitle: {
-        fontSize: FONTS.sizes.m,
-        fontWeight: '500',
+        fontSize: 15, // Standard YouTube readable size
+        fontWeight: '500', // Medium weight
         color: COLORS.textPrimary,
-        lineHeight: 20,
+        lineHeight: 22,
+        marginBottom: 4,
     },
     channelName: {
-        fontSize: FONTS.sizes.xs,
+        fontSize: 12,
         color: COLORS.textSecondary,
-        marginTop: 4,
     },
 });
 
