@@ -344,6 +344,61 @@ export const youtubeApi = {
         }
     },
 
+    // Get Channel Details
+    getChannel: async (channelId: string): Promise<any> => {
+        try {
+            const data = await fetchYouTube('/channels', {
+                part: 'snippet,statistics,brandingSettings',
+                id: channelId
+            });
+
+            if (!data.items || data.items.length === 0) throw new Error('Channel not found');
+            const item = data.items[0];
+
+            return {
+                id: item.id,
+                title: item.snippet.title,
+                description: item.snippet.description,
+                customUrl: item.snippet.customUrl,
+                avatar: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+                banner: item.brandingSettings?.image?.bannerExternalUrl || null,
+                subscribers: item.statistics.subscriberCount,
+                videoCount: item.statistics.videoCount,
+                viewCount: item.statistics.viewCount,
+            };
+        } catch (error) {
+            console.error('YouTube API Error in getChannel:', error);
+            throw error;
+        }
+    },
+
+    // Get Channel Videos
+    getChannelVideos: async (channelId: string, pageToken?: string): Promise<SearchResult> => {
+        try {
+            const params: any = {
+                part: 'snippet,id',
+                channelId: channelId,
+                order: 'date',
+                type: 'video',
+                maxResults: '20'
+            };
+            if (pageToken) params.pageToken = pageToken;
+
+            const data = await fetchYouTube('/search', params);
+
+            let items = data.items.map(mapYouTubeItemToVideoItem);
+            items = await fetchVideoDetails(items);
+
+            return {
+                items,
+                nextPageToken: data.nextPageToken
+            };
+        } catch (error) {
+            console.error('YouTube API Error in getChannelVideos:', error);
+            throw error;
+        }
+    },
+
     // Helpers
     parseISO8601Duration: (duration: string): number => {
         const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);

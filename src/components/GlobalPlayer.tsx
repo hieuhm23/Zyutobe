@@ -16,6 +16,7 @@ import {
     AppState
 } from 'react-native';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import TrackPlayer, { Capability, Event, State, useTrackPlayerEvents } from 'react-native-track-player';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlayerSettingsModal from './PlayerSettingsModal';
@@ -118,12 +119,74 @@ const GlobalPlayer = () => {
     // Settings State
     const [qualities, setQualities] = useState<{ height: number; url: string }[]>([]);
     const [currentQuality, setCurrentQuality] = useState<string | number>('auto');
+    const [pendingSeek, setPendingSeek] = useState<number | null>(null);
     const [showSettings, setShowSettings] = useState(false);
 
     // Sleep Timer (Target Timestamp)
     const [sleepTarget, setSleepTarget] = useState<number | null>(null);
     // Keep track for UI display
     const [selectedSleepMinutes, setSelectedSleepMinutes] = useState<number | null>(null);
+
+    // TrackPlayer Setup
+    useEffect(() => {
+        const setup = async () => {
+            try {
+                await TrackPlayer.setupPlayer();
+                await TrackPlayer.updateOptions({
+                    capabilities: [
+                        Capability.Play,
+                        Capability.Pause,
+                        Capability.SkipToNext,
+                        Capability.SkipToPrevious,
+                        Capability.Stop,
+                        Capability.SeekTo,
+                    ],
+                    compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
+                    notificationCapabilities: [
+                        Capability.Play,
+                        Capability.Pause,
+                        Capability.SkipToNext,
+                        Capability.SkipToPrevious,
+                        Capability.Stop,
+                    ],
+                });
+            } catch (e) { console.log('TrackPlayer setup failed', e); }
+        };
+        setup();
+    }, []);
+
+    // Sync TrackPlayer Metadata
+    useEffect(() => {
+        if (videoId && meta.title) {
+            TrackPlayer.add({
+                id: videoId,
+                url: videoUrl || '', // Dummy URL if not ready, will update when ready
+                title: meta.title,
+                artist: meta.uploader || 'ZyTube',
+                artwork: meta.thumbnailUrl || meta.thumbnail,
+                duration: status.durationMillis ? status.durationMillis / 1000 : 0,
+            }).then(() => {
+                TrackPlayer.skip(0);
+            });
+        }
+    }, [videoId, meta.title]);
+
+    // TrackPlayer Remote Listeners
+    useEffect(() => {
+        const playSub = TrackPlayer.addEventListener(Event.RemotePlay, () => videoRef.current?.playAsync());
+        const pauseSub = TrackPlayer.addEventListener(Event.RemotePause, () => videoRef.current?.pauseAsync());
+        const nextSub = TrackPlayer.addEventListener(Event.RemoteNext, () => {
+            if (relatedVideos.length > 0) playVideo(relatedVideos[0]);
+        });
+        const prevSub = TrackPlayer.addEventListener(Event.RemotePrevious, () => videoRef.current?.setPositionAsync(0));
+
+        return () => {
+            playSub.remove();
+            pauseSub.remove();
+            nextSub.remove();
+            prevSub.remove();
+        };
+    }, [relatedVideos]);
 
     const handleSetSleepTimer = (minutes: number | null) => {
         setSelectedSleepMinutes(minutes);
@@ -317,7 +380,25 @@ const GlobalPlayer = () => {
                     .map(s => ({ height: s.height || 0, url: s.url }))
                     .sort((a, b) => b.height - a.height);
                 const unique = streams.filter((v, i, a) => a.findIndex(t => (t.height === v.height)) === i);
+
+                // Add HLS as "Auto" option if available
+                const qualityOptions = [...unique];
+                if (info.hls) {
+                    // Check if already in list or add as a special object
+                    // We'll handle 'auto' in changeQuality
+                }
                 setQualities(unique);
+
+                // Try to match current videoUrl to a quality height
+                if (videoUrl === info.hls) {
+                    setCurrentQuality('auto');
+                } else if (videoUrl) {
+                    const matched = unique.find(q => q.url === videoUrl);
+                    if (matched) setCurrentQuality(matched.height);
+                } else if (unique.length > 0) {
+                    // Default to highest available if not set
+                    setCurrentQuality(unique[0].height);
+                }
             }
         });
 
@@ -325,8 +406,32 @@ const GlobalPlayer = () => {
     }, [videoId]);
 
     const changeQuality = async (url: string, height: number) => {
-        setVideoUrl(url);
-        setCurrentQuality(height);
+        if (!videoRef.current) return;
+
+        let targetUrl = url;
+        let targetHeight: string | number = height;
+
+        if (url === 'auto') {
+            if (!meta.hls) {
+                Alert.alert("Thông báo", "Video này không hỗ trợ chế độ Tự động cao nhất.");
+                return;
+            }
+            targetUrl = meta.hls;
+            targetHeight = 'auto';
+        }
+
+        try {
+            const status = await videoRef.current.getStatusAsync();
+            if (status.isLoaded) {
+                setPendingSeek(status.positionMillis);
+            }
+
+            setVideoUrl(targetUrl);
+            setCurrentQuality(targetHeight);
+        } catch (e) {
+            setVideoUrl(targetUrl);
+            setCurrentQuality(targetHeight);
+        }
     };
 
     const loadMoreRelatedVideos = async () => {
@@ -494,6 +599,13 @@ const GlobalPlayer = () => {
                                     }
                                 }}
                                 onReadyForDisplay={() => setVideoReady(true)}
+                                onLoad={(status) => {
+                                    if (pendingSeek !== null && videoRef.current) {
+                                        console.log(`Restoring position after quality switch: ${pendingSeek}ms`);
+                                        videoRef.current.setPositionAsync(pendingSeek);
+                                        setPendingSeek(null);
+                                    }
+                                }}
                             />
                         )}
 
@@ -629,8 +741,8 @@ const GlobalPlayer = () => {
                             keyExtractor={(item, index) => item.url + index}
                             ListHeaderComponent={
                                 <View style={{ padding: 16 }}>
-                                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', lineHeight: 26 }}>{meta.title}</Text>
-                                    <Text style={{ color: '#aaa', fontSize: 12, marginTop: 8 }}>{pipedApi.formatViews(meta.views || 0)} lượt xem • {meta.uploadedDate}</Text>
+                                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', lineHeight: 24 }}>{meta.title}</Text>
+                                    <Text style={{ color: '#aaa', fontSize: 12, marginTop: 6 }}>{pipedApi.formatViews(meta.views || 0)} lượt xem • {meta.uploadedDate}</Text>
 
                                     <View style={{ flexDirection: 'row', marginTop: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#222' }}>
                                         <TouchableOpacity style={{ alignItems: 'center', marginRight: 35 }} onPress={() => toggleFavorite(video)}>
@@ -661,10 +773,10 @@ const GlobalPlayer = () => {
                             }
                             renderItem={({ item }) => (
                                 <TouchableOpacity onPress={() => playVideo(item)} style={{ flexDirection: 'row', marginBottom: 16, paddingHorizontal: 16 }}>
-                                    <Image source={{ uri: item.thumbnail }} style={{ width: 140, height: 78, borderRadius: 10 }} />
-                                    <View style={{ marginLeft: 12, flex: 1, justifyContent: 'center' }}>
-                                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '500' }} numberOfLines={2}>{item.title}</Text>
-                                        <Text style={{ color: '#aaa', fontSize: 12, marginTop: 5 }}>{item.uploaderName}</Text>
+                                    <Image source={{ uri: item.thumbnail }} style={{ width: 140, height: 79, borderRadius: 8, backgroundColor: '#333' }} resizeMode="cover" />
+                                    <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
+                                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '500', lineHeight: 20 }} numberOfLines={2}>{item.title}</Text>
+                                        <Text style={{ color: '#aaa', fontSize: 12, marginTop: 4 }} numberOfLines={1}>{item.uploaderName}</Text>
                                     </View>
                                 </TouchableOpacity>
                             )}

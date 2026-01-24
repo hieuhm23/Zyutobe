@@ -11,6 +11,7 @@ import LibraryScreen from '../screens/LibraryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
+import ChannelScreen from '../screens/ChannelScreen';
 
 // Custom Tab Bar
 import TelegramTabBar from '../components/TelegramTabBar';
@@ -54,6 +55,7 @@ const AppNavigator = () => {
                 <Stack.Screen name="Search" component={SearchScreen} />
                 <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
                 <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
+                <Stack.Screen name="Channel" component={ChannelScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );

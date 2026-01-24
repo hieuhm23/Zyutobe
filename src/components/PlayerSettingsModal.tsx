@@ -83,6 +83,19 @@ const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
                 <Text style={styles.headerTitle}>Chất lượng video</Text>
             </View>
             <ScrollView style={{ maxHeight: 300 }}>
+                <TouchableOpacity
+                    style={styles.subMenuItem}
+                    onPress={() => {
+                        onSelectQuality('auto', 0);
+                        onClose();
+                    }}
+                >
+                    {currentQuality === 'auto' && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                    <Text style={[styles.subText, currentQuality === 'auto' && { color: COLORS.primary }]}>
+                        Tự động (Lên tới 4K)
+                    </Text>
+                </TouchableOpacity>
+
                 {qualities.map((q) => (
                     <TouchableOpacity
                         key={q.height}
@@ -92,8 +105,8 @@ const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
                             onClose();
                         }}
                     >
-                        {parseInt(currentQuality.toString()) === q.height && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
-                        <Text style={[styles.subText, parseInt(currentQuality.toString()) === q.height && { color: COLORS.primary }]}>
+                        {currentQuality !== 'auto' && parseInt(currentQuality.toString()) === q.height && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                        <Text style={[styles.subText, currentQuality !== 'auto' && parseInt(currentQuality.toString()) === q.height && { color: COLORS.primary }]}>
                             {q.height}p
                         </Text>
                     </TouchableOpacity>

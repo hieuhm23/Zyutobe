@@ -150,7 +150,11 @@ const SearchScreen = ({ route, navigation }: any) => {
     };
 
     const handleVideoPress = (video: VideoItem) => {
-        playVideo(video);
+        if (video.type === 'channel') {
+            navigation.navigate('Channel', { channelData: video });
+        } else {
+            playVideo(video);
+        }
     };
 
     const handleLoadMore = async () => {
@@ -228,12 +232,14 @@ const SearchScreen = ({ route, navigation }: any) => {
                 {/* Info */}
                 <View style={[styles.videoInfo, isChannel && { marginTop: 0, flex: 1, flexDirection: 'column', alignItems: 'flex-start' }]}>
                     {!isChannel && (
-                        <Image
-                            source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
-                            style={styles.channelAvatar}
-                            contentFit="cover"
-                            transition={500}
-                        />
+                        <TouchableOpacity onPress={() => navigation.navigate('Channel', { channelId: item.uploaderUrl?.split('/').pop() })}>
+                            <Image
+                                source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
+                                style={styles.channelAvatar}
+                                contentFit="cover"
+                                transition={500}
+                            />
+                        </TouchableOpacity>
                     )}
 
                     <View style={styles.textContainer}>

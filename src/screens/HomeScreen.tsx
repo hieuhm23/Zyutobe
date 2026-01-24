@@ -21,6 +21,7 @@ import youtubeApi from '../services/youtubeApi';
 import { usePlayer } from '../context/PlayerContext';
 import { useSettings } from '../context/SettingsContext';
 import VideoSkeleton from '../components/VideoSkeleton';
+import VideoCard from '../components/VideoCard';
 
 type TabType = 'featured' | 'trending';
 
@@ -177,46 +178,12 @@ const HomeScreen = ({ navigation }: any) => {
     );
 
     const renderVideoCard = ({ item }: { item: VideoItem }) => (
-        <TouchableOpacity
-            style={styles.videoCard}
-            onPress={() => handleVideoPress(item)}
-            activeOpacity={0.8}
-        >
-            <View style={styles.thumbnailContainer}>
-                <Image
-                    source={{ uri: item.thumbnail }}
-                    style={styles.thumbnail}
-                    contentFit="cover"
-                    transition={500}
-                />
-                <View style={styles.durationBadge}>
-                    <Text style={styles.durationText}>
-                        {youtubeApi.formatDuration(Number(item.duration) || 0)}
-                    </Text>
-                </View>
-            </View>
-
-            <View style={styles.videoInfo}>
-                <Image
-                    source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
-                    style={styles.channelAvatar}
-                    contentFit="cover"
-                    transition={500}
-                />
-
-                <View style={styles.videoDetails}>
-                    <Text style={styles.videoTitle} numberOfLines={2}>
-                        {item.title}
-                    </Text>
-                    <Text style={styles.channelName} numberOfLines={1}>
-                        {item.uploaderName}
-                    </Text>
-                    <Text style={styles.viewsDate}>
-                        {youtubeApi.formatViews(item.views || 0)} views • {item.uploadedDate}
-                    </Text>
-                </View>
-            </View>
-        </TouchableOpacity>
+        <VideoCard
+            video={item}
+            onPress={playVideo}
+            onPressChannel={(channelId) => navigation.navigate('Channel', { channelId })}
+            showAvatar={true}
+        />
     );
 
     return (
