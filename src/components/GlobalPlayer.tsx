@@ -13,10 +13,10 @@ import {
     FlatList,
     Alert,
     Platform,
-    AppState
+    AppState,
+    DeviceEventEmitter
 } from 'react-native';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
-import TrackPlayer, { Capability, Event, State, useTrackPlayerEvents } from 'react-native-track-player';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlayerSettingsModal from './PlayerSettingsModal';
@@ -27,7 +27,10 @@ import { getSkipSegments, SponsorSegment } from '../services/sponsorBlockApi';
 import { useLibrary } from '../hooks/useLibrary';
 import { usePlayer } from '../context/PlayerContext';
 import { useSettings } from '../context/SettingsContext';
+import { usePremium } from '../context/PremiumContext';
+import { useNavigation } from '@react-navigation/native';
 import DownloadManager from '../services/DownloadManager';
+import TrackPlayer, { Capability, State } from 'react-native-track-player';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const VIDEO_HEIGHT = (SCREEN_WIDTH * 9) / 16;
@@ -94,6 +97,8 @@ const GlobalPlayer = () => {
     const insets = useSafeAreaInsets();
     const { addToHistory, isFavorite: checkIsFav, toggleFavorite } = useLibrary();
     const { autoPlay, backgroundPlay, autoPiP, sponsorBlockEnabled } = useSettings();
+    const { isPremium } = usePremium();
+    const navigation = useNavigation<any>();
 
     const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 94 : 80;
     const SNAP_TOP = 0;
@@ -127,64 +132,51 @@ const GlobalPlayer = () => {
     // Keep track for UI display
     const [selectedSleepMinutes, setSelectedSleepMinutes] = useState<number | null>(null);
 
-    // TrackPlayer Setup
+    const [isTPReady, setIsTPReady] = useState(false); // TrackPlayer for Dynamic Island / Lock Screen
+
+    // Initialize TrackPlayer for Now Playing (Dynamic Island / Lock Screen)
     useEffect(() => {
-        const setup = async () => {
+        const setupTrackPlayer = async () => {
             try {
                 await TrackPlayer.setupPlayer();
                 await TrackPlayer.updateOptions({
                     capabilities: [
                         Capability.Play,
                         Capability.Pause,
-                        Capability.SkipToNext,
-                        Capability.SkipToPrevious,
-                        Capability.Stop,
                         Capability.SeekTo,
-                    ],
-                    compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
-                    notificationCapabilities: [
-                        Capability.Play,
-                        Capability.Pause,
                         Capability.SkipToNext,
                         Capability.SkipToPrevious,
-                        Capability.Stop,
                     ],
+                    compactCapabilities: [Capability.Play, Capability.Pause],
+                    notificationCapabilities: [Capability.Play, Capability.Pause, Capability.SeekTo],
                 });
-            } catch (e) { console.log('TrackPlayer setup failed', e); }
+                setIsTPReady(true);
+                console.log('TrackPlayer initialized for Now Playing');
+            } catch (e) {
+                console.log('TrackPlayer setup error:', e);
+            }
         };
-        setup();
+        setupTrackPlayer();
     }, []);
 
-    // Sync TrackPlayer Metadata
+    // Listen for Remote Control Events from Dynamic Island / Lock Screen
     useEffect(() => {
-        if (videoId && meta.title) {
-            TrackPlayer.add({
-                id: videoId,
-                url: videoUrl || '', // Dummy URL if not ready, will update when ready
-                title: meta.title,
-                artist: meta.uploader || 'ZyTube',
-                artwork: meta.thumbnailUrl || meta.thumbnail,
-                duration: status.durationMillis ? status.durationMillis / 1000 : 0,
-            }).then(() => {
-                TrackPlayer.skip(0);
-            });
-        }
-    }, [videoId, meta.title]);
-
-    // TrackPlayer Remote Listeners
-    useEffect(() => {
-        const playSub = TrackPlayer.addEventListener(Event.RemotePlay, () => videoRef.current?.playAsync());
-        const pauseSub = TrackPlayer.addEventListener(Event.RemotePause, () => videoRef.current?.pauseAsync());
-        const nextSub = TrackPlayer.addEventListener(Event.RemoteNext, () => {
-            if (relatedVideos.length > 0) playVideo(relatedVideos[0]);
+        const playListener = DeviceEventEmitter.addListener('tp-play', () => {
+            videoRef.current?.playAsync();
         });
-        const prevSub = TrackPlayer.addEventListener(Event.RemotePrevious, () => videoRef.current?.setPositionAsync(0));
+        const pauseListener = DeviceEventEmitter.addListener('tp-pause', () => {
+            videoRef.current?.pauseAsync();
+        });
+        const nextListener = DeviceEventEmitter.addListener('tp-next', () => {
+            if (relatedVideos.length > 0) {
+                playVideo(relatedVideos[0]);
+            }
+        });
 
         return () => {
-            playSub.remove();
-            pauseSub.remove();
-            nextSub.remove();
-            prevSub.remove();
+            playListener.remove();
+            pauseListener.remove();
+            nextListener.remove();
         };
     }, [relatedVideos]);
 
@@ -257,9 +249,9 @@ const GlobalPlayer = () => {
         }
     };
 
-    // --- AUTO PIP LOGIC ---
+    // --- AUTO PIP LOGIC (VIP Only) ---
     useEffect(() => {
-        if (!autoPiP || !PipHandler) return;
+        if (!autoPiP || !PipHandler || !isPremium) return; // Check VIP
 
         const sub = AppState.addEventListener('change', (nextAppState) => {
             if (nextAppState === 'background' && videoId && status.isPlaying) {
@@ -272,15 +264,15 @@ const GlobalPlayer = () => {
         });
 
         return () => sub.remove();
-    }, [autoPiP, videoId, status.isPlaying]);
+    }, [autoPiP, videoId, status.isPlaying, isPremium]);
 
-    // --- AUDIO CONFIG ---
+    // --- AUDIO CONFIG (Background Play - FREE feature) ---
     useEffect(() => {
         const configAudio = async () => {
             try {
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: false,
-                    staysActiveInBackground: backgroundPlay,
+                    staysActiveInBackground: backgroundPlay, // FREE - no VIP check needed
                     playsInSilentModeIOS: true,
                     shouldDuckAndroid: true,
                     interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
@@ -290,6 +282,46 @@ const GlobalPlayer = () => {
         };
         configAudio();
     }, [backgroundPlay]);
+
+    // --- SYNC NOW PLAYING (Dynamic Island / Lock Screen) ---
+    useEffect(() => {
+        if (!isTPReady || !videoId || !meta.title) return;
+
+        const syncNowPlaying = async () => {
+            try {
+                // Reset queue and add current track
+                await TrackPlayer.reset();
+                await TrackPlayer.add({
+                    id: videoId,
+                    url: 'silence', // We use expo-av for actual playback
+                    title: meta.title || 'ZyTube',
+                    artist: meta.uploaderName || 'Unknown Artist',
+                    artwork: meta.thumbnailUrl || meta.thumbnail || video?.thumbnail,
+                    duration: meta.duration || 0,
+                });
+                console.log('Now Playing updated:', meta.title);
+            } catch (e) {
+                console.log('Sync Now Playing error:', e);
+            }
+        };
+        syncNowPlaying();
+    }, [isTPReady, videoId, meta.title, meta.uploaderName, meta.thumbnailUrl]);
+
+    // --- SYNC PLAY/PAUSE STATE TO TRACKPLAYER ---
+    useEffect(() => {
+        if (!isTPReady) return;
+
+        const syncPlayState = async () => {
+            try {
+                if (status.isPlaying) {
+                    await TrackPlayer.play();
+                } else {
+                    await TrackPlayer.pause();
+                }
+            } catch (e) { }
+        };
+        syncPlayState();
+    }, [isTPReady, status.isPlaying]);
 
     // --- ANIMATIONS ---
     const playerBorderRadius = translateY.interpolate({
@@ -412,6 +444,13 @@ const GlobalPlayer = () => {
         let targetHeight: string | number = height;
 
         if (url === 'auto') {
+            if (!isPremium) {
+                Alert.alert("ZyTube Premium", "Tính năng Tự động (4K) chỉ dành cho thành viên VIP.", [
+                    { text: "Để sau", style: "cancel" },
+                    { text: "Nâng cấp ngay", onPress: () => navigation.navigate('Premium') }
+                ]);
+                return;
+            }
             if (!meta.hls) {
                 Alert.alert("Thông báo", "Video này không hỗ trợ chế độ Tự động cao nhất.");
                 return;
@@ -475,6 +514,14 @@ const GlobalPlayer = () => {
     };
 
     const handleDownload = async () => {
+        if (!isPremium) {
+            Alert.alert("ZyTube Premium", "Bạn cần nâng cấp VIP để sử dụng tính năng tải video.", [
+                { text: "Để sau", style: "cancel" },
+                { text: "Nâng cấp ngay", onPress: () => navigation.navigate('Premium') }
+            ]);
+            return;
+        }
+
         if (isDownloaded) {
             Alert.alert('Video đã tải', 'Bạn có muốn xóa video này khỏi thiết bị?', [
                 { text: 'Hủy', style: 'cancel' },
@@ -566,6 +613,18 @@ const GlobalPlayer = () => {
                                 posterSource={{ uri: video?.thumbnail || meta.thumbnailUrl || meta.thumbnail }}
                                 onPlaybackStatusUpdate={s => {
                                     setStatus(s);
+
+                                    // Sync TrackPlayer State (Temporarily disabled to fix crash)
+                                    /*
+                                    if (s.isLoaded && isTPReady) {
+                                        try {
+                                            const TrackPlayer = require('react-native-track-player').default;
+                                            if (s.isPlaying) TrackPlayer.play().catch(() => {});
+                                            else TrackPlayer.pause().catch(() => {});
+                                        } catch (e) {}
+                                    }
+                                    */
+
                                     if (sleepTarget && s.isLoaded && s.isPlaying && Date.now() >= sleepTarget) {
                                         videoRef.current?.pauseAsync();
                                         setSleepTarget(null);

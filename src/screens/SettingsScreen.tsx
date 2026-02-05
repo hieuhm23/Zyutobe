@@ -18,6 +18,7 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
 import { useSettings } from '../context/SettingsContext';
 import { useNavigation } from '@react-navigation/native';
 import { checkForUpdates } from '../utils/updateChecker';
+import { usePremium } from '../context/PremiumContext';
 
 const SettingsScreen = () => {
     const navigation = useNavigation<any>();
@@ -37,6 +38,7 @@ const SettingsScreen = () => {
         toggleSponsorBlock,
         clearCache
     } = useSettings();
+    const { isPremium } = usePremium();
 
     const REGIONS = [
         { label: 'Việt Nam', value: 'VN' },
@@ -165,13 +167,46 @@ const SettingsScreen = () => {
                         </View>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.profileName}>Khách (Guest)</Text>
-                            <Text style={styles.profileStatus}>Chế độ ẩn danh</Text>
+                            <Text style={styles.profileStatus}>{isPremium ? 'Thành viên VIP' : 'Chế độ ẩn danh'}</Text>
                         </View>
-                        <TouchableOpacity style={styles.loginBtn} onPress={() => Alert.alert('Thông báo', 'Tính năng đăng nhập đang được phát triển!')}>
-                            <Text style={styles.loginBtnText}>Đăng nhập</Text>
-                        </TouchableOpacity>
+                        {isPremium ? (
+                            <View style={styles.vipBadge}>
+                                <Ionicons name="diamond" size={14} color="#FFD700" />
+                                <Text style={styles.vipText}>VIP</Text>
+                            </View>
+                        ) : (
+                            <TouchableOpacity style={styles.loginBtn} onPress={() => navigation.navigate('Premium')}>
+                                <Text style={styles.loginBtnText}>Nâng cấp</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
+
+                {/* PREMIUM SECTION */}
+                {!isPremium && (
+                    <View style={styles.sectionContainer}>
+                        <SectionHeader title="DÀNH RIÊNG CHO BẠN" />
+                        <TouchableOpacity
+                            style={styles.premiumBanner}
+                            onPress={() => navigation.navigate('Premium')}
+                        >
+                            <LinearGradient
+                                colors={[COLORS.primary, '#FF4D4D']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={styles.premiumBannerGradient}
+                            >
+                                <View style={styles.premiumBannerContent}>
+                                    <View>
+                                        <Text style={styles.premiumBannerTitle}>Nâng cấp ZyTube Premium</Text>
+                                        <Text style={styles.premiumBannerSubtitle}>Xem 4K, Nghe nhạc tắt màn hình & hơn thế nữa</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color="#fff" />
+                                </View>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 {/* Settings Sections */}
                 <View style={styles.sectionContainer}>
@@ -191,10 +226,10 @@ const SettingsScreen = () => {
                             icon="albums"
                             color="#8B5CF6"
                             title="Hình trong hình (PiP)"
-                            subtitle="Tự động thu nhỏ video"
+                            subtitle={isPremium ? "Tự động thu nhỏ video" : "Tính năng chỉ dành cho VIP"}
                             isToggle
                             toggleValue={autoPiP}
-                            onToggle={toggleAutoPiP}
+                            onToggle={isPremium ? toggleAutoPiP : () => navigation.navigate('Premium')}
                         />
                         <View style={styles.divider} />
                         <SettingItem
@@ -370,6 +405,45 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '600',
         color: COLORS.primary,
+    },
+    vipBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 215, 0, 0.15)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 215, 0, 0.3)',
+    },
+    vipText: {
+        color: '#FFD700',
+        fontWeight: 'bold',
+        fontSize: 12,
+        marginLeft: 4,
+    },
+    premiumBanner: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginBottom: SPACING.m,
+    },
+    premiumBannerGradient: {
+        padding: 16,
+    },
+    premiumBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    premiumBannerTitle: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    premiumBannerSubtitle: {
+        color: 'rgba(255,255,255,0.8)',
+        fontSize: 12,
+        marginTop: 4,
     },
     sectionContainer: {
         marginBottom: SPACING.l,

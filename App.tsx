@@ -4,17 +4,33 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppNavigator from './src/navigation/AppNavigator';
 import { PlayerProvider } from './src/context/PlayerContext';
 import { SettingsProvider } from './src/context/SettingsContext';
+import { PremiumProvider } from './src/context/PremiumContext';
 import GlobalPlayer from './src/components/GlobalPlayer';
 import UpdateModal from './src/components/UpdateModal';
 import NetworkStatus from './src/components/NetworkStatus';
 import SplashScreen from './src/components/SplashScreen';
 import PolicyConsentScreen from './src/screens/PolicyConsentScreen';
 import { checkForUpdateSilent } from './src/utils/updateChecker';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
+import TrackPlayer from 'react-native-track-player';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [policyAccepted, setPolicyAccepted] = useState<boolean | null>(null);
+
+  // Setup TrackPlayer safely
+  useEffect(() => {
+    const setup = async () => {
+      try {
+        // Only setup if native module is available
+        await TrackPlayer.setupPlayer();
+      } catch (e) {
+        console.log("TrackPlayer setup failed - Native module might be missing", e);
+      }
+    };
+    setup();
+  }, []);
 
   // Check policy acceptance status
   useEffect(() => {
@@ -54,7 +70,9 @@ export default function App() {
   if (policyAccepted === false) {
     return (
       <SafeAreaProvider>
-        <PolicyConsentScreen onAccept={() => setPolicyAccepted(true)} />
+        <ErrorBoundary>
+          <PolicyConsentScreen onAccept={() => setPolicyAccepted(true)} />
+        </ErrorBoundary>
       </SafeAreaProvider>
     );
   }
@@ -66,20 +84,23 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SettingsProvider>
-        <PlayerProvider>
-          <AppNavigator />
-          <GlobalPlayer />
+      <ErrorBoundary>
+        <PremiumProvider>
+          <SettingsProvider>
+            <PlayerProvider>
+              <AppNavigator />
 
-          {/* Update Modal - shows when new version available */}
-          <UpdateModal
-            visible={showUpdateModal}
-            onDismiss={() => setShowUpdateModal(false)}
-            forceUpdate={false}
-          />
-          <NetworkStatus />
-        </PlayerProvider>
-      </SettingsProvider>
+              {/* Update Modal - shows when new version available */}
+              <UpdateModal
+                visible={showUpdateModal}
+                onDismiss={() => setShowUpdateModal(false)}
+                forceUpdate={false}
+              />
+              <NetworkStatus />
+            </PlayerProvider>
+          </SettingsProvider>
+        </PremiumProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

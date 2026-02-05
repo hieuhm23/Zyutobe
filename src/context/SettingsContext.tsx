@@ -21,8 +21,8 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     const [autoPlay, setAutoPlay] = useState(true);
-    const [backgroundPlay, setBackgroundPlay] = useState(true);
-    const [autoPiP, setAutoPiP] = useState(true);
+    const [backgroundPlay, setBackgroundPlay] = useState(true); // FREE feature - default ON
+    const [autoPiP, setAutoPiP] = useState(false); // VIP only - default OFF
     const [videoQuality, setVideoQualityState] = useState('720p');
     const [region, setRegionState] = useState('VN');
     const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState(true);

@@ -12,9 +12,11 @@ import SettingsScreen from '../screens/SettingsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
 import ChannelScreen from '../screens/ChannelScreen';
+import PremiumScreen from '../screens/PremiumScreen';
 
-// Custom Tab Bar
+// Components
 import TelegramTabBar from '../components/TelegramTabBar';
+import GlobalPlayer from '../components/GlobalPlayer';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -56,7 +58,9 @@ const AppNavigator = () => {
                 <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
                 <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
                 <Stack.Screen name="Channel" component={ChannelScreen} />
+                <Stack.Screen name="Premium" component={PremiumScreen} />
             </Stack.Navigator>
+            <GlobalPlayer />
         </NavigationContainer>
     );
 };
