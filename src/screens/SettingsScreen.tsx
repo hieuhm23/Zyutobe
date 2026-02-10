@@ -34,6 +34,8 @@ const SettingsScreen = () => {
         setVideoQuality,
         region,
         setRegion,
+        audioOnlyMode,
+        toggleAudioOnlyMode,
         sponsorBlockEnabled,
         toggleSponsorBlock,
         clearCache
@@ -256,6 +258,16 @@ const SettingsScreen = () => {
                     <SectionHeader title="CHẤT LƯỢNG & DỮ LIỆU" />
                     <View style={styles.card}>
                         <SettingItem
+                            icon="musical-notes"
+                            color="#EC4899"
+                            title="Chế độ chỉ âm thanh"
+                            subtitle="Tiết kiệm dữ liệu 3G/4G"
+                            isToggle
+                            toggleValue={audioOnlyMode}
+                            onToggle={toggleAudioOnlyMode}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem
                             icon="globe"
                             color="#10B981"
                             title="Quốc gia"
@@ -264,7 +276,7 @@ const SettingsScreen = () => {
                         />
                         <View style={styles.divider} />
                         <SettingItem
-                            icon="options" // Changed icon to be more relevant
+                            icon="options"
                             color="#F59E0B"
                             title="Chất lượng video"
                             subtitle={`Mặc định: ${videoQuality === 'auto' ? 'Tự động' : videoQuality}`}

@@ -14,7 +14,8 @@ import {
     Alert,
     Platform,
     AppState,
-    DeviceEventEmitter
+    DeviceEventEmitter,
+    Modal
 } from 'react-native';
 import { Video, ResizeMode, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -31,6 +32,7 @@ import { usePremium } from '../context/PremiumContext';
 import { useNavigation } from '@react-navigation/native';
 import DownloadManager from '../services/DownloadManager';
 import TrackPlayer, { Capability, State } from 'react-native-track-player';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const VIDEO_HEIGHT = (SCREEN_WIDTH * 9) / 16;
@@ -96,7 +98,7 @@ const GlobalPlayer = () => {
     const { video, videoId, isMinimized, playVideo, minimizePlayer, maximizePlayer, closePlayer } = usePlayer();
     const insets = useSafeAreaInsets();
     const { addToHistory, isFavorite: checkIsFav, toggleFavorite } = useLibrary();
-    const { autoPlay, backgroundPlay, autoPiP, sponsorBlockEnabled } = useSettings();
+    const { autoPlay, backgroundPlay, autoPiP, sponsorBlockEnabled, audioOnlyMode } = useSettings();
     const { isPremium } = usePremium();
     const navigation = useNavigation<any>();
 
@@ -126,11 +128,15 @@ const GlobalPlayer = () => {
     const [currentQuality, setCurrentQuality] = useState<string | number>('auto');
     const [pendingSeek, setPendingSeek] = useState<number | null>(null);
     const [showSettings, setShowSettings] = useState(false);
+    const [showSleepTimer, setShowSleepTimer] = useState(false);
 
     // Sleep Timer (Target Timestamp)
     const [sleepTarget, setSleepTarget] = useState<number | null>(null);
     // Keep track for UI display
     const [selectedSleepMinutes, setSelectedSleepMinutes] = useState<number | null>(null);
+
+    // Audio-Only Mode State
+    const [isAudioOnly, setIsAudioOnly] = useState(false);
 
     const [isTPReady, setIsTPReady] = useState(false); // TrackPlayer for Dynamic Island / Lock Screen
 
@@ -138,6 +144,15 @@ const GlobalPlayer = () => {
     useEffect(() => {
         const setupTrackPlayer = async () => {
             try {
+                // Check if already initialized
+                const currentTrack = await TrackPlayer.getActiveTrack().catch(() => null);
+                if (currentTrack !== undefined) {
+                    // Already initialized
+                    setIsTPReady(true);
+                    console.log('TrackPlayer already initialized');
+                    return;
+                }
+
                 await TrackPlayer.setupPlayer();
                 await TrackPlayer.updateOptions({
                     capabilities: [
@@ -152,33 +167,58 @@ const GlobalPlayer = () => {
                 });
                 setIsTPReady(true);
                 console.log('TrackPlayer initialized for Now Playing');
-            } catch (e) {
-                console.log('TrackPlayer setup error:', e);
+            } catch (e: any) {
+                // If error is "already been initialized", that's fine
+                if (e?.message?.includes('already been initialized')) {
+                    setIsTPReady(true);
+                    console.log('TrackPlayer was already initialized');
+                } else {
+                    console.log('TrackPlayer setup error:', e);
+                }
             }
         };
         setupTrackPlayer();
     }, []);
 
     // Listen for Remote Control Events from Dynamic Island / Lock Screen
+    // Using TrackPlayer events directly for better background support
     useEffect(() => {
-        const playListener = DeviceEventEmitter.addListener('tp-play', () => {
-            videoRef.current?.playAsync();
-        });
-        const pauseListener = DeviceEventEmitter.addListener('tp-pause', () => {
-            videoRef.current?.pauseAsync();
-        });
-        const nextListener = DeviceEventEmitter.addListener('tp-next', () => {
-            if (relatedVideos.length > 0) {
-                playVideo(relatedVideos[0]);
-            }
-        });
+        if (!isTPReady) return;
 
-        return () => {
-            playListener.remove();
-            pauseListener.remove();
-            nextListener.remove();
+        const setupRemoteListeners = async () => {
+            try {
+                const { Event } = await import('react-native-track-player');
+
+                TrackPlayer.addEventListener(Event.RemotePlay, async () => {
+                    console.log('Remote: PLAY');
+                    await videoRef.current?.playAsync();
+                });
+
+                TrackPlayer.addEventListener(Event.RemotePause, async () => {
+                    console.log('Remote: PAUSE');
+                    await videoRef.current?.pauseAsync();
+                });
+
+                TrackPlayer.addEventListener(Event.RemoteNext, () => {
+                    console.log('Remote: NEXT');
+                    if (relatedVideos.length > 0) {
+                        playVideo(relatedVideos[0]);
+                    }
+                });
+
+                TrackPlayer.addEventListener(Event.RemoteStop, async () => {
+                    console.log('Remote: STOP');
+                    await videoRef.current?.pauseAsync();
+                });
+
+                console.log('Remote control listeners registered');
+            } catch (e) {
+                console.log('Failed to setup remote listeners:', e);
+            }
         };
-    }, [relatedVideos]);
+
+        setupRemoteListeners();
+    }, [isTPReady, relatedVideos, playVideo]);
 
     const handleSetSleepTimer = (minutes: number | null) => {
         setSelectedSleepMinutes(minutes);
@@ -196,6 +236,100 @@ const GlobalPlayer = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+    // Fix Stale Closure for PanResponder
+    const isMinimizedRef = useRef(isMinimized);
+    const isFullscreenRef = useRef(isFullscreen);
+
+    useEffect(() => { isMinimizedRef.current = isMinimized; }, [isMinimized]);
+    useEffect(() => { isFullscreenRef.current = isFullscreen; }, [isFullscreen]);
+
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => !isMinimizedRef.current && !isFullscreenRef.current,
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                return !isMinimizedRef.current && !isFullscreenRef.current && gestureState.dy > 10 && Math.abs(gestureState.dx) < 10;
+            },
+            onPanResponderMove: (_, gestureState) => {
+                if (gestureState.dy > 0) {
+                    translateY.setValue(gestureState.dy);
+                }
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                if (gestureState.dy > 120 || gestureState.vy > 0.5) {
+                    minimizePlayer();
+                } else {
+                    Animated.spring(translateY, {
+                        toValue: 0,
+                        useNativeDriver: false,
+                        tension: 60,
+                        friction: 9
+                    }).start();
+                }
+            }
+        })
+    ).current;
+
+    // Sync translateY when minimized/maximized state changes
+    useEffect(() => {
+        if (isMinimized) {
+            // Khi minimized, giá trị animation giữ ở mức tối đa (SNAP_BOTTOM) để giữ layout mini
+            translateY.setValue(SNAP_BOTTOM);
+        } else {
+            // Khi maximized, reset về 0
+            if ((translateY as any)._value !== 0) { // Check current value to avoid unnecessary spring
+                Animated.spring(translateY, {
+                    toValue: 0,
+                    useNativeDriver: false,
+                    tension: 50,
+                    friction: 9
+                }).start();
+            }
+        }
+    }, [isMinimized]);
+
+    // --- INTERPOLATIONS (Biến thiên Animation) ---
+    // 1. Chiều rộng Video: Từ Full màn hình -> 106px
+    const animatedVideoWidth = translateY.interpolate({
+        inputRange: [0, SNAP_BOTTOM],
+        outputRange: [SCREEN_WIDTH, 106],
+        extrapolate: 'clamp',
+    });
+
+    // 2. Chiều cao Video: Từ Tỷ lệ 16:9 -> 60px
+    const animatedVideoHeight = translateY.interpolate({
+        inputRange: [0, SNAP_BOTTOM],
+        outputRange: [VIDEO_HEIGHT + insets.top, 60],
+        extrapolate: 'clamp',
+    });
+
+    // 3. Container Height: Từ Full màn hình -> 60px
+    const animatedContainerHeight = translateY.interpolate({
+        inputRange: [0, SNAP_BOTTOM],
+        outputRange: [SCREEN_HEIGHT, MINI_HEIGHT],
+        extrapolate: 'clamp',
+    });
+
+    // 4. List Opacity: Mờ dần nội dung list khi vuốt
+    const contentOpacity = translateY.interpolate({
+        inputRange: [0, SNAP_BOTTOM / 2],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+    });
+
+    // 5. Mini Controls Opacity: Hiện dần lên khi gần đáy
+    const miniControlsOpacity = translateY.interpolate({
+        inputRange: [SNAP_BOTTOM * 0.7, SNAP_BOTTOM], // Bắt đầu hiện ở 70% quãng đường
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+    });
+
+    // 6. Bo góc: Tròn dần
+    const playerBorderRadius = translateY.interpolate({
+        inputRange: [0, SNAP_BOTTOM],
+        outputRange: [0, 12],
+        extrapolate: 'clamp',
+    });
 
     // Double Tap to Seek State
     const [seekAnims, setSeekAnims] = useState({ left: 0, right: 0 });
@@ -283,35 +417,61 @@ const GlobalPlayer = () => {
         configAudio();
     }, [backgroundPlay]);
 
-    // --- SYNC NOW PLAYING (Dynamic Island / Lock Screen) ---
-    useEffect(() => {
-        if (!isTPReady || !videoId || !meta.title) return;
 
-        const syncNowPlaying = async () => {
+    // Note: Now Playing sync moved to Dynamic Island control below
+    // --- DYNAMIC ISLAND VISIBILITY CONTROL ---
+    // Show Dynamic Island ONLY when app goes to background
+    // Hide (reset) when app comes to foreground
+    const appStateRef = useRef(AppState.currentState);
+    const dynamicIslandActive = useRef(false);
+
+    useEffect(() => {
+        if (!isTPReady || !videoId) return;
+
+        const subscription = AppState.addEventListener('change', async nextAppState => {
+            const prevState = appStateRef.current;
+            appStateRef.current = nextAppState;
+
             try {
-                // Reset queue and add current track
-                await TrackPlayer.reset();
-                await TrackPlayer.add({
-                    id: videoId,
-                    url: 'silence', // We use expo-av for actual playback
-                    title: meta.title || 'ZyTube',
-                    artist: meta.uploaderName || 'Unknown Artist',
-                    artwork: meta.thumbnailUrl || meta.thumbnail || video?.thumbnail,
-                    duration: meta.duration || 0,
-                });
-                console.log('Now Playing updated:', meta.title);
+                // Going to background (from active/inactive to background)
+                if (nextAppState === 'background' && prevState !== 'background') {
+                    if (status.isPlaying && meta.title && !dynamicIslandActive.current) {
+                        await TrackPlayer.reset();
+                        await TrackPlayer.add({
+                            id: videoId,
+                            url: 'silence',
+                            title: meta.title || 'ZyTube',
+                            artist: meta.uploaderName || 'Unknown Artist',
+                            artwork: meta.thumbnailUrl || meta.thumbnail || video?.thumbnail,
+                            duration: meta.duration || 0,
+                        });
+                        await TrackPlayer.play();
+                        dynamicIslandActive.current = true;
+                        console.log('Dynamic Island: SHOWN');
+                    }
+                }
+                // Coming back to foreground (from background to active)
+                else if (nextAppState === 'active' && prevState === 'background') {
+                    if (dynamicIslandActive.current) {
+                        await TrackPlayer.reset();
+                        dynamicIslandActive.current = false;
+                        console.log('Dynamic Island: HIDDEN');
+                    }
+                }
             } catch (e) {
-                console.log('Sync Now Playing error:', e);
+                console.log('Dynamic Island error:', e);
             }
-        };
-        syncNowPlaying();
-    }, [isTPReady, videoId, meta.title, meta.uploaderName, meta.thumbnailUrl]);
+        });
 
-    // --- SYNC PLAY/PAUSE STATE TO TRACKPLAYER ---
+        return () => subscription.remove();
+    }, [isTPReady, videoId, status.isPlaying, meta.title, meta.uploaderName, meta.thumbnailUrl]);
+
+    // --- SYNC VIDEO STATE TO TRACKPLAYER WHEN IN BACKGROUND ---
+    // This keeps Dynamic Island in sync with actual video playback
     useEffect(() => {
-        if (!isTPReady) return;
+        if (!dynamicIslandActive.current || !isTPReady) return;
 
-        const syncPlayState = async () => {
+        const syncToTrackPlayer = async () => {
             try {
                 if (status.isPlaying) {
                     await TrackPlayer.play();
@@ -320,43 +480,48 @@ const GlobalPlayer = () => {
                 }
             } catch (e) { }
         };
-        syncPlayState();
-    }, [isTPReady, status.isPlaying]);
 
-    // --- ANIMATIONS ---
-    const playerBorderRadius = translateY.interpolate({
-        inputRange: [SNAP_TOP, SNAP_BOTTOM],
-        outputRange: [0, 15],
-        extrapolate: 'clamp',
-    });
-    const contentOpacity = translateY.interpolate({
-        inputRange: [SNAP_TOP, SNAP_BOTTOM / 3],
-        outputRange: [1, 0],
-        extrapolate: 'clamp',
-    });
-    const miniControlsOpacity = translateY.interpolate({
-        inputRange: [SNAP_BOTTOM * 0.8, SNAP_BOTTOM],
-        outputRange: [0, 1],
-        extrapolate: 'clamp',
-    });
+        syncToTrackPlayer();
+    }, [status.isPlaying, isTPReady]);
 
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => false,
-            onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 10 && !isMinimized && !isFullscreen,
-            onPanResponderMove: (_, gesture) => gesture.dy > 0 && translateY.setValue(gesture.dy),
-            onPanResponderRelease: (_, gesture) => {
-                if (gesture.dy > 120 || gesture.vy > 0.5) minimizePlayer();
-                else Animated.spring(translateY, { toValue: SNAP_TOP, useNativeDriver: true, damping: 25, stiffness: 150 }).start();
+    // --- UPDATE DYNAMIC ISLAND WHEN VIDEO CHANGES IN BACKGROUND ---
+    // This ensures Dynamic Island shows correct info when switching videos
+    useEffect(() => {
+        if (!dynamicIslandActive.current || !isTPReady || !videoId || !meta.title) return;
+
+        const updateNowPlaying = async () => {
+            try {
+                console.log('Updating Dynamic Island for new video:', meta.title);
+                await TrackPlayer.reset();
+                await TrackPlayer.add({
+                    id: videoId,
+                    url: 'silence',
+                    title: meta.title || 'ZyTube',
+                    artist: meta.uploaderName || 'Unknown Artist',
+                    artwork: meta.thumbnailUrl || meta.thumbnail || video?.thumbnail,
+                    duration: meta.duration || 0,
+                });
+                if (status.isPlaying) {
+                    await TrackPlayer.play();
+                }
+            } catch (e) {
+                console.log('Update Now Playing error:', e);
             }
-        })
-    ).current;
+        };
+
+        updateNowPlaying();
+    }, [videoId, meta.title, isTPReady]);
+
+
 
     useEffect(() => {
-        if (videoId) {
-            Animated.spring(translateY, { toValue: isMinimized ? SNAP_BOTTOM : SNAP_TOP, useNativeDriver: true, damping: 25, stiffness: 150, mass: 0.8 }).start();
-        } else { translateY.setValue(SCREEN_HEIGHT); }
-    }, [isMinimized, videoId, SNAP_BOTTOM]);
+        if (videoId && !isMinimized) {
+            // Khi mở video mới Fullscreen -> Slide up
+            translateY.setValue(SCREEN_HEIGHT);
+            Animated.spring(translateY, { toValue: 0, useNativeDriver: false, damping: 25, stiffness: 150 }).start();
+        }
+    }, [videoId]);
+
 
     useEffect(() => {
         if (!videoId) return;
@@ -370,7 +535,17 @@ const GlobalPlayer = () => {
 
         const initPlayer = async () => {
             try {
-                const stream = await pipedApi.getBestStreamUrl(videoId);
+                // Use audio-only stream if mode is enabled
+                let stream;
+                if (audioOnlyMode) {
+                    console.log('🎵 Audio-Only Mode: Fetching audio stream...');
+                    stream = await pipedApi.getBestAudioUrl(videoId);
+                    if (isMounted) setIsAudioOnly(true);
+                } else {
+                    stream = await pipedApi.getBestStreamUrl(videoId);
+                    if (isMounted) setIsAudioOnly(false);
+                }
+
                 if (isMounted && stream?.url) {
                     setVideoUrl(stream.url);
                     if (stream.headers) setVideoHeaders(stream.headers);
@@ -435,7 +610,7 @@ const GlobalPlayer = () => {
         });
 
         return () => { isMounted = false; };
-    }, [videoId]);
+    }, [videoId, audioOnlyMode]);
 
     const changeQuality = async (url: string, height: number) => {
         if (!videoRef.current) return;
@@ -508,9 +683,53 @@ const GlobalPlayer = () => {
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
-    const toggleFullscreen = () => {
-        setIsFullscreen(!isFullscreen);
-        StatusBar.setHidden(!isFullscreen);
+    const toggleFullscreen = async () => {
+        if (!isFullscreen) {
+            // Enter fullscreen - lock to landscape
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+            StatusBar.setHidden(true);
+            setIsFullscreen(true);
+        } else {
+            // Exit fullscreen - lock back to portrait
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+            StatusBar.setHidden(false);
+            setIsFullscreen(false);
+        }
+    };
+
+    // Sleep Timer Functions
+    const SLEEP_OPTIONS = [
+        { label: '15 phút', value: 15 },
+        { label: '30 phút', value: 30 },
+        { label: '45 phút', value: 45 },
+        { label: '1 giờ', value: 60 },
+        { label: '2 giờ', value: 120 },
+    ];
+
+    const selectSleepTimer = (minutes: number) => {
+        const targetTime = Date.now() + minutes * 60 * 1000;
+        setSleepTarget(targetTime);
+        setSelectedSleepMinutes(minutes);
+        setShowSleepTimer(false);
+    };
+
+    const cancelSleepTimer = () => {
+        setSleepTarget(null);
+        setSelectedSleepMinutes(null);
+        setShowSleepTimer(false);
+    };
+
+    const formatSleepRemaining = (): string => {
+        if (!sleepTarget) return '';
+        const remaining = Math.max(0, sleepTarget - Date.now());
+        const mins = Math.floor(remaining / 60000);
+        const secs = Math.floor((remaining % 60000) / 1000);
+        if (mins >= 60) {
+            const hrs = Math.floor(mins / 60);
+            const m = mins % 60;
+            return `${hrs}h ${m}m`;
+        }
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
     const handleDownload = async () => {
@@ -569,19 +788,18 @@ const GlobalPlayer = () => {
         <Animated.View style={{
             position: 'absolute',
             zIndex: 99999,
-            width: isFullscreen ? SCREEN_HEIGHT : (isMinimized ? SCREEN_WIDTH - 20 : SCREEN_WIDTH),
-            height: isFullscreen ? SCREEN_WIDTH : (isMinimized ? MINI_HEIGHT : SCREEN_HEIGHT),
-            backgroundColor: '#1A1A1A',
+            width: isFullscreen ? '100%' : (isMinimized ? SCREEN_WIDTH - 20 : SCREEN_WIDTH),
+            height: isFullscreen ? '100%' : (isMinimized ? MINI_HEIGHT : animatedContainerHeight),
+            backgroundColor: '#000',
             borderRadius: isFullscreen ? 0 : playerBorderRadius,
             marginHorizontal: isMinimized ? 10 : 0,
             overflow: 'hidden',
-            top: 0,
-            left: 0,
-            transform: [{ translateY: isFullscreen ? 0 : translateY }, { rotate: isFullscreen ? '90deg' : '0deg' }], // CSS rotation fallback
-            ...(isFullscreen && {
-                top: (SCREEN_HEIGHT - SCREEN_WIDTH) / 2,
-                left: -(SCREEN_HEIGHT - SCREEN_WIDTH) / 2,
-            }),
+            top: isFullscreen ? 0 : (isMinimized && !isFullscreen ? SNAP_BOTTOM : translateY.interpolate({
+                inputRange: [0, SNAP_BOTTOM],
+                outputRange: [0, SNAP_BOTTOM],
+                extrapolate: 'clamp'
+            })),
+            left: isFullscreen ? 0 : 0,
             ...(isMinimized && { elevation: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' })
         }}>
             <StatusBar barStyle="light-content" backgroundColor="transparent" translucent hidden={isFullscreen} />
@@ -589,12 +807,12 @@ const GlobalPlayer = () => {
             <View style={{ flex: 1, flexDirection: isMinimized ? 'row' : 'column', alignItems: isMinimized ? 'center' : 'stretch' }}>
 
                 {/* VIDEO BOX */}
-                <View
+                <Animated.View
                     style={{
-                        width: isMinimized ? 106 : '100%',
-                        height: isMinimized ? 60 : (isFullscreen ? '100%' : VIDEO_HEIGHT + insets.top),
+                        width: isFullscreen ? '100%' : (isMinimized ? 106 : animatedVideoWidth),
+                        height: isFullscreen ? '100%' : (isMinimized ? 60 : animatedVideoHeight),
                         backgroundColor: '#000',
-                        paddingTop: (isMinimized || isFullscreen) ? 0 : insets.top // Move padding to parent View
+                        paddingTop: (isMinimized || isFullscreen) ? 0 : insets.top,
                     }}
                     {...(isMinimized ? {} : panResponder.panHandlers)}
                 >
@@ -713,6 +931,109 @@ const GlobalPlayer = () => {
                             </View>
                         )}
 
+                        {/* Audio-Only Mode Overlay */}
+                        {isAudioOnly && !isMinimized && videoReady && (
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' }]}>
+                                {/* Blurred Thumbnail Background */}
+                                <Image
+                                    source={{ uri: video?.thumbnail || meta.thumbnailUrl || meta.thumbnail }}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        position: 'absolute',
+                                        opacity: 0.25
+                                    }}
+                                    blurRadius={30}
+                                />
+
+                                {/* Gradient Overlay */}
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+
+                                {/* Content */}
+                                <View style={{ alignItems: 'center' }}>
+                                    {/* Album Art Style */}
+                                    <View style={{
+                                        width: 120,
+                                        height: 120,
+                                        borderRadius: 16,
+                                        overflow: 'hidden',
+                                        marginBottom: 20,
+                                        shadowColor: COLORS.primary,
+                                        shadowOffset: { width: 0, height: 8 },
+                                        shadowOpacity: 0.4,
+                                        shadowRadius: 12,
+                                        elevation: 15
+                                    }}>
+                                        <Image
+                                            source={{ uri: video?.thumbnail || meta.thumbnailUrl || meta.thumbnail }}
+                                            style={{ width: '100%', height: '100%' }}
+                                        />
+                                        {/* Play indicator overlay */}
+                                        <View style={[StyleSheet.absoluteFill, {
+                                            backgroundColor: 'rgba(0,0,0,0.3)',
+                                            justifyContent: 'center',
+                                            alignItems: 'center'
+                                        }]}>
+                                            <View style={{
+                                                width: 50,
+                                                height: 50,
+                                                borderRadius: 25,
+                                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                                justifyContent: 'center',
+                                                alignItems: 'center'
+                                            }}>
+                                                <Ionicons name={status.isPlaying ? "musical-notes" : "pause"} size={24} color="#fff" />
+                                            </View>
+                                        </View>
+                                    </View>
+
+                                    {/* Title */}
+                                    <Text style={{
+                                        color: '#fff',
+                                        fontSize: 16,
+                                        fontWeight: '700',
+                                        marginBottom: 6,
+                                        textAlign: 'center',
+                                        paddingHorizontal: 20,
+                                        maxWidth: 280
+                                    }} numberOfLines={2}>
+                                        {meta.title || video?.title || 'Đang phát...'}
+                                    </Text>
+
+                                    {/* Artist */}
+                                    <Text style={{
+                                        color: 'rgba(255,255,255,0.6)',
+                                        fontSize: 14,
+                                        marginBottom: 16
+                                    }}>
+                                        {meta.uploader || meta.uploaderName || video?.uploaderName || ''}
+                                    </Text>
+
+                                    {/* Audio Mode Badge */}
+                                    <View style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        backgroundColor: COLORS.primary + '25',
+                                        paddingHorizontal: 14,
+                                        paddingVertical: 8,
+                                        borderRadius: 20,
+                                        borderWidth: 1,
+                                        borderColor: COLORS.primary + '40'
+                                    }}>
+                                        <Ionicons name="musical-note" size={14} color={COLORS.primary} />
+                                        <Text style={{
+                                            color: COLORS.primary,
+                                            fontSize: 12,
+                                            fontWeight: '600',
+                                            marginLeft: 6
+                                        }}>
+                                            Chế độ chỉ âm thanh
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        )}
+
                         {!isMinimized && showControls && videoReady && (
                             <View style={[StyleSheet.absoluteFill, { zIndex: 10 }]} pointerEvents="box-none">
                                 {/* Background Dimmer - Visual Only, allow taps to pass through to Tap Overlays */}
@@ -735,6 +1056,21 @@ const GlobalPlayer = () => {
                                             </TouchableOpacity>
                                             <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.badge}>
                                                 <Text style={styles.badgeText}>{playbackRate}x</Text>
+                                            </TouchableOpacity>
+                                            {/* Sleep Timer Button */}
+                                            <TouchableOpacity
+                                                onPress={() => setShowSleepTimer(true)}
+                                                style={[
+                                                    styles.badge,
+                                                    sleepTarget ? { backgroundColor: COLORS.primary } : null
+                                                ]}
+                                            >
+                                                <Ionicons name="moon" size={14} color="#fff" />
+                                                {sleepTarget && (
+                                                    <Text style={[styles.badgeText, { marginLeft: 4 }]}>
+                                                        {formatSleepRemaining()}
+                                                    </Text>
+                                                )}
                                             </TouchableOpacity>
                                             <TouchableOpacity onPress={() => setShowSettings(true)} style={{ padding: 5 }}>
                                                 <Ionicons name="settings-outline" size={24} color="#fff" />
@@ -778,11 +1114,17 @@ const GlobalPlayer = () => {
                             </View>
                         )}
                     </View>
-                </View>
+                </Animated.View>
 
-                {/* MINI PLAYER CONTROLS */}
-                {isMinimized && (
-                    <Animated.View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', opacity: miniControlsOpacity }}>
+                {/* MINI PLAYER CONTROLS - Always rendered but opacity controlled */}
+                {(!isFullscreen) && (
+                    <Animated.View style={{
+                        position: 'absolute',
+                        left: 106, right: 0, top: 0, bottom: 0,
+                        flexDirection: 'row', alignItems: 'center',
+                        opacity: miniControlsOpacity, // Fade in when dragging down
+                        zIndex: isMinimized ? 10 : -1 // Hide clicks when full
+                    }}>
                         <TouchableOpacity style={{ flex: 1, paddingLeft: 12 }} onPress={maximizePlayer}>
                             <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }} numberOfLines={1}>{meta.title || videoId}</Text>
                             <Text style={{ color: '#aaa', fontSize: 11 }} numberOfLines={1}>{meta.uploaderName}</Text>
@@ -858,6 +1200,105 @@ const GlobalPlayer = () => {
                 sleepTimer={selectedSleepMinutes}
                 onSetSleepTimer={handleSetSleepTimer}
             />
+
+            {/* Sleep Timer Modal */}
+            <Modal
+                visible={showSleepTimer}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowSleepTimer(false)}
+            >
+                <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}
+                    activeOpacity={1}
+                    onPress={() => setShowSleepTimer(false)}
+                >
+                    <View style={{
+                        backgroundColor: '#1a1a1a',
+                        borderRadius: 20,
+                        padding: 20,
+                        width: '85%',
+                        maxWidth: 340
+                    }}>
+                        {/* Header */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+                            <View style={{
+                                width: 44, height: 44, borderRadius: 22,
+                                backgroundColor: COLORS.primary + '20',
+                                justifyContent: 'center', alignItems: 'center',
+                                marginRight: 12
+                            }}>
+                                <Ionicons name="moon" size={22} color={COLORS.primary} />
+                            </View>
+                            <View>
+                                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Hẹn giờ tắt</Text>
+                                <Text style={{ color: '#888', fontSize: 13 }}>
+                                    {sleepTarget ? `Còn ${formatSleepRemaining()}` : 'Tự động dừng phát'}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* Options */}
+                        {SLEEP_OPTIONS.map((option) => (
+                            <TouchableOpacity
+                                key={option.value}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    paddingVertical: 14,
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: '#333'
+                                }}
+                                onPress={() => selectSleepTimer(option.value)}
+                            >
+                                <Ionicons
+                                    name={selectedSleepMinutes === option.value ? "radio-button-on" : "radio-button-off"}
+                                    size={22}
+                                    color={selectedSleepMinutes === option.value ? COLORS.primary : '#666'}
+                                />
+                                <Text style={{
+                                    color: selectedSleepMinutes === option.value ? COLORS.primary : '#fff',
+                                    fontSize: 16,
+                                    marginLeft: 12,
+                                    fontWeight: selectedSleepMinutes === option.value ? '600' : '400'
+                                }}>
+                                    {option.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+
+                        {/* Cancel Timer Button */}
+                        {sleepTarget && (
+                            <TouchableOpacity
+                                style={{
+                                    marginTop: 16,
+                                    backgroundColor: '#ff444420',
+                                    paddingVertical: 14,
+                                    borderRadius: 12,
+                                    alignItems: 'center'
+                                }}
+                                onPress={cancelSleepTimer}
+                            >
+                                <Text style={{ color: '#ff4444', fontSize: 15, fontWeight: '600' }}>
+                                    Hủy hẹn giờ
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Close Button */}
+                        <TouchableOpacity
+                            style={{
+                                marginTop: 12,
+                                paddingVertical: 14,
+                                alignItems: 'center'
+                            }}
+                            onPress={() => setShowSleepTimer(false)}
+                        >
+                            <Text style={{ color: '#888', fontSize: 15 }}>Đóng</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </Animated.View >
     );
 };

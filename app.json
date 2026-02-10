@@ -17,10 +17,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.zyea.zytube",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
-          "picture-in-picture"
+          "picture-in-picture",
+          "remote-notification"
         ],
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -37,7 +39,8 @@
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.WAKE_LOCK"
       ],
       "config": {
         "pictureInPicture": true
@@ -54,9 +57,16 @@
           "android": {
             "enableProguardInReleaseBuilds": true,
             "minSdkVersion": 26
+          },
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-google-signin/google-signin"
     ],
     "updates": {
       "enabled": true,

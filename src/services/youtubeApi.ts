@@ -10,13 +10,13 @@ const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 import pipedApi from './pipedApi'; // Fallback Source
 
-// Smart Cache TTL (Optimized for Quota)
+// Smart Cache TTL (Optimized for Fresh Content 2026)
 const CACHE_TTL = {
-    TRENDING: 6 * 60 * 60 * 1000,      // 6 Hours - Hot videos don't change often
-    SEARCH: 3 * 60 * 60 * 1000,        // 3 Hours - Search results are stable
-    VIDEO_DETAILS: 12 * 60 * 60 * 1000, // 12 Hours - Video info rarely changes
-    CHANNEL: 24 * 60 * 60 * 1000,      // 24 Hours - Avatars almost never change
-    DEFAULT: 2 * 60 * 60 * 1000,       // 2 Hours - Fallback
+    TRENDING: 15 * 60 * 1000,           // 15 Minutes - Always show latest trending
+    SEARCH: 10 * 60 * 1000,             // 10 Minutes - Fresh search results
+    VIDEO_DETAILS: 60 * 60 * 1000,      // 1 Hour - Video info rarely changes
+    CHANNEL: 6 * 60 * 60 * 1000,        // 6 Hours - Channel info stable
+    DEFAULT: 10 * 60 * 1000,            // 10 Minutes - Fallback
 };
 
 // Get appropriate TTL based on endpoint

@@ -28,10 +28,13 @@ const UpdateModal: React.FC<UpdateModalProps> = ({ visible, onDismiss, forceUpda
     const [updating, setUpdating] = useState(false);
 
     const updateInfo: UpdateInfo = {
-        version: '1.0.0',
+        version: '1.2.0',
         changes: [
-            '🎬 Cải UI/UX Trải nghiệm người dùng',
-            '🐛 Sửa các lỗi nhỏ cho người dùng , tối ưu hiệu năng '
+            '✨ Shimmer loading animation - Hiệu ứng tải mượt mà',
+            '� Empty States mới - Giao diện thư viện trống đẹp hơn',
+            '👆 Video Card animation - Scale + glow khi nhấn',
+            '♿ Accessibility - Hỗ trợ screen readers',
+            '⏰ Sleep Timer UI - Hẹn giờ tắt nhạc',
         ]
     };
 

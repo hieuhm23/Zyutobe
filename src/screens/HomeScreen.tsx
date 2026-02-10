@@ -12,6 +12,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
@@ -20,6 +21,7 @@ import youtubeApi from '../services/youtubeApi';
 
 import { usePlayer } from '../context/PlayerContext';
 import { useSettings } from '../context/SettingsContext';
+import { useTabBar } from '../context/TabBarContext';
 import VideoSkeleton from '../components/VideoSkeleton';
 import VideoCard from '../components/VideoCard';
 
@@ -29,10 +31,13 @@ const HomeScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
     const { playVideo } = usePlayer();
     const { region } = useSettings();
+    const { setTabBarVisible } = useTabBar();
 
     // Refs for Scroll Logic
     const flatListRef = useRef<FlatList>(null);
     const scrollOffset = useRef(0);
+    const lastScrollY = useRef(0);
+    const accumulatedScroll = useRef(0); // Tích lũy khoảng cách scroll để tránh flickering
 
     const [activeTab, setActiveTab] = useState<TabType>('featured');
     const logoScale = useRef(new Animated.Value(1)).current;
@@ -42,15 +47,17 @@ const HomeScreen = ({ navigation }: any) => {
     const [refreshing, setRefreshing] = useState(false);
     const [nextPageToken, setNextPageToken] = useState<string | null>(null);
     const HOME_TAGS = [
-        'nhạc trẻ remix hot tiktok',
-        'lofi chill nhẹ nhàng',
-        'top hit việt nam 2024',
-        'nhạc edm gây nghiện',
-        'bolero trữ tình hay nhất',
-        'nhạc acoustic thư giãn',
-        'nhạc rap việt mới nhất',
-        'video hot thịnh hành',
-        'hài mới nhất'
+        'nhạc trẻ remix hot tiktok 2026',
+        'lofi chill nhẹ nhàng 2026',
+        'top hit việt nam 2026',
+        'nhạc edm gây nghiện 2026',
+        'bolero trữ tình hay nhất 2026',
+        'nhạc acoustic thư giãn mới nhất',
+        'nhạc rap việt mới nhất 2026',
+        'video hot thịnh hành hôm nay',
+        'hài việt nam mới nhất 2026',
+        'nhạc xuân 2026',
+        'trending vietnam today'
     ];
 
     const [currentTag, setCurrentTag] = useState(HOME_TAGS[Math.floor(Math.random() * HOME_TAGS.length)]);
@@ -191,7 +198,7 @@ const HomeScreen = ({ navigation }: any) => {
             <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
 
             <View style={[styles.header, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-                <Animated.View style={{ transform: [{ scale: logoScale }] }}>
+                <Animated.View style={{ transform: [{ scale: logoScale }], flexDirection: 'row', alignItems: 'center' }}>
                     <TouchableOpacity
                         style={[styles.logoRow, { marginBottom: 0 }]}
                         activeOpacity={0.7}
@@ -199,11 +206,13 @@ const HomeScreen = ({ navigation }: any) => {
                     >
                         <Image
                             source={require('../../assets/icon.png')}
-                            style={{ width: 34, height: 34, borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary + '30' }}
+                            style={{ width: 34, height: 34, borderRadius: 8, borderWidth: 2, borderColor: '#E74C3C' }}
                             contentFit="contain"
                         />
-                        <Text style={[styles.logoText, { marginLeft: 10 }]}>ZyTube</Text>
+                        <Text style={[styles.logoText, { marginLeft: 10, color: '#E74C3C' }]}>ZyTube</Text>
                     </TouchableOpacity>
+                    {/* Tết icon nhỏ */}
+                    <Text style={{ fontSize: 16, marginLeft: 6 }}>🧧</Text>
                 </Animated.View>
 
                 <TouchableOpacity
@@ -236,9 +245,62 @@ const HomeScreen = ({ navigation }: any) => {
                     onEndReached={handleLoadMore}
                     onEndReachedThreshold={0.5}
                     onScroll={(e) => {
-                        scrollOffset.current = e.nativeEvent.contentOffset.y;
+                        const currentOffset = e.nativeEvent.contentOffset.y;
+                        const delta = currentOffset - scrollOffset.current;
+
+                        // Tích lũy scroll distance (reset khi đổi hướng)
+                        if ((delta > 0 && accumulatedScroll.current < 0) || (delta < 0 && accumulatedScroll.current > 0)) {
+                            accumulatedScroll.current = 0; // Reset khi đổi hướng
+                        }
+                        accumulatedScroll.current += delta;
+
+                        // Vuốt lên tích lũy > 30px → Hiện tab bar
+                        if (accumulatedScroll.current < -30) {
+                            setTabBarVisible(true);
+                            accumulatedScroll.current = 0;
+                        }
+
+                        // Ở gần top (< 50) → Luôn hiện
+                        if (currentOffset < 50) {
+                            setTabBarVisible(true);
+                            accumulatedScroll.current = 0;
+                        }
+
+                        scrollOffset.current = currentOffset;
+                    }}
+                    onScrollBeginDrag={() => {
+                        lastScrollY.current = scrollOffset.current;
+                        accumulatedScroll.current = 0;
+                    }}
+                    onScrollEndDrag={(e) => {
+                        const currentOffset = e.nativeEvent.contentOffset.y;
+                        const totalDrag = currentOffset - lastScrollY.current;
+
+                        // Chỉ ẩn khi vuốt xuống rõ ràng (> 60px tổng) và đã scroll xa đủ
+                        if (totalDrag > 60 && currentOffset > 100) {
+                            setTabBarVisible(false);
+                        }
+
+                        lastScrollY.current = currentOffset;
+                    }}
+                    onMomentumScrollEnd={(e) => {
+                        const currentOffset = e.nativeEvent.contentOffset.y;
+                        if (currentOffset <= 0) setTabBarVisible(true);
+                        lastScrollY.current = currentOffset;
+                        accumulatedScroll.current = 0;
                     }}
                     scrollEventThrottle={16}
+                    // Performance optimizations
+                    removeClippedSubviews={true}
+                    maxToRenderPerBatch={5}
+                    windowSize={7}
+                    initialNumToRender={4}
+                    updateCellsBatchingPeriod={50}
+                    getItemLayout={(data, index) => ({
+                        length: 280, // Approximate height of video card
+                        offset: 280 * index,
+                        index,
+                    })}
                     ListFooterComponent={
                         loading && videos.length > 0 ? (
                             <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 20 }} />

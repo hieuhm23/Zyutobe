@@ -14,6 +14,7 @@ import { COLORS } from '../constants/theme';
 import { BlurView } from 'expo-blur';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import * as Haptics from 'expo-haptics';
+import { useTabBar } from '../context/TabBarContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -26,13 +27,14 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
     { name: 'HomeTab', label: 'Trang chủ', iconActive: 'home', iconInactive: 'home-outline' },
-    { name: 'SearchTab', label: 'Tìm kiếm', iconActive: 'search', iconInactive: 'search-outline' },
     { name: 'LibraryTab', label: 'Thư viện', iconActive: 'library', iconInactive: 'library-outline' },
     { name: 'SettingsTab', label: 'Cài đặt', iconActive: 'settings', iconInactive: 'settings-outline' },
 ];
 
 const TelegramTabBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
     const insets = useSafeAreaInsets();
+    const { isTabBarVisible } = useTabBar();
+
     // Tính toán chiều rộng để tạo hiệu ứng thuốc nổi (floating pill)
     // Container width nhỏ hơn màn hình 32px (margin 16px mỗi bên)
     const CONTAINER_WIDTH = SCREEN_WIDTH - 32;
@@ -41,6 +43,21 @@ const TelegramTabBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
     // Tính toán vị trí và animation
     const translateX = useRef(new Animated.Value(state.index * NEW_TAB_WIDTH)).current;
     const scaleAnims = useRef(TABS.map(() => new Animated.Value(1))).current;
+
+    // Animation ẩn/hiện tab bar
+    const translateY = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        // Animate hide/show tab bar
+        // Dùng spring với damping cao hơn → giảm bouncy, mượt hơn
+        Animated.spring(translateY, {
+            toValue: isTabBarVisible ? 0 : 120, // 120 đủ ẩn (60 height + margin)
+            useNativeDriver: true,
+            damping: 18,        // Giảm dao động (ít nảy)
+            stiffness: 120,     // Tốc độ phản hồi vừa phải
+            mass: 0.8,          // Nhẹ hơn → phản hồi nhanh hơn
+        }).start();
+    }, [isTabBarVisible]);
 
     useEffect(() => {
         // Animate pill movement
@@ -83,7 +100,13 @@ const TelegramTabBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
     const PILL_WIDTH = NEW_TAB_WIDTH - 12; // Pill nhỏ hơn tab width một chút
 
     return (
-        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+        <Animated.View style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            transform: [{ translateY }]
+        }}>
             {/* Background container to match app bg color (prevents white corners) */}
 
             <View style={[
@@ -94,8 +117,8 @@ const TelegramTabBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
                 }
             ]}>
                 <BlurView
-                    intensity={80}
-                    tint="dark"
+                    intensity={30}
+                    tint="light"
                     style={[
                         styles.blurContainer,
                         {
@@ -155,7 +178,7 @@ const TelegramTabBar: React.FC<BottomTabBarProps> = ({ state, navigation }) => {
                     })}
                 </BlurView>
             </View>
-        </View>
+        </Animated.View>
     );
 };
 
@@ -173,7 +196,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 20,
         elevation: 15,
-        backgroundColor: 'rgba(20, 27, 45, 0.8)', // Fallback color
+        backgroundColor: 'rgba(255, 255, 255, 0.05)', // Very transparent - see through
     },
     blurContainer: {
         flexDirection: 'row',

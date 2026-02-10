@@ -13,10 +13,14 @@ import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/TermsOfServiceScreen';
 import ChannelScreen from '../screens/ChannelScreen';
 import PremiumScreen from '../screens/PremiumScreen';
+import LoginScreen from '../screens/LoginScreen';
 
 // Components
 import TelegramTabBar from '../components/TelegramTabBar';
 import GlobalPlayer from '../components/GlobalPlayer';
+
+// Auth
+import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -27,10 +31,12 @@ const TabNavigator = () => {
             tabBar={(props) => <TelegramTabBar {...props} />}
             screenOptions={{
                 headerShown: false,
+                lazy: true, // Lazy load tabs - chỉ load khi user chuyển đến
+                freezeOnBlur: true, // Freeze inactive screens để tiết kiệm memory
+                animation: 'fade', // Smooth fade animation khi chuyển tab
             }}
         >
             <Tab.Screen name="HomeTab" component={HomeScreen} />
-            <Tab.Screen name="SearchTab" component={SearchScreen} />
             <Tab.Screen name="LibraryTab" component={LibraryScreen} />
             <Tab.Screen name="SettingsTab" component={SettingsScreen} />
         </Tab.Navigator>
@@ -38,6 +44,12 @@ const TabNavigator = () => {
 };
 
 const AppNavigator = () => {
+    const { user, isLoading } = useAuth();
+
+    if (isLoading) {
+        return null; // SplashScreen đã handle loading state
+    }
+
     return (
         <NavigationContainer>
             <Stack.Navigator
@@ -46,6 +58,15 @@ const AppNavigator = () => {
                     animation: 'slide_from_right',
                 }}
             >
+                {/* Nếu chưa đăng nhập, hiện LoginScreen đầu tiên */}
+                {!user && (
+                    <Stack.Screen
+                        name="Login"
+                        component={LoginScreen}
+                        options={{ animation: 'fade' }}
+                    />
+                )}
+
                 <Stack.Screen name="Main" component={TabNavigator} />
                 <Stack.Screen
                     name="Player"

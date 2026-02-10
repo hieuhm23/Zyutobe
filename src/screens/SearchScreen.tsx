@@ -20,6 +20,7 @@ import pipedApi, { VideoItem } from '../services/pipedApi';
 import youtubeApi from '../services/youtubeApi';
 
 import { usePlayer } from '../context/PlayerContext';
+import { SearchEmptyState } from '../components/EmptyState';
 
 const SearchScreen = ({ route, navigation }: any) => {
     const { query: initialQuery } = route.params || {};
@@ -407,11 +408,7 @@ const SearchScreen = ({ route, navigation }: any) => {
                     }
                     ListEmptyComponent={
                         !loading && searchQuery ? (
-                            <View style={styles.emptyContainer}>
-                                <Ionicons name="search" size={60} color={COLORS.textTertiary} />
-                                <Text style={styles.emptyText}>Không tìm thấy kết quả</Text>
-                                <Text style={styles.emptySubtext}>Thử tìm kiếm từ khóa khác</Text>
-                            </View>
+                            <SearchEmptyState />
                         ) : null
                     }
                 />

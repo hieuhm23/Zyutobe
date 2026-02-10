@@ -20,6 +20,7 @@ import youtubeApi from '../services/youtubeApi';
 import { usePlayer } from '../context/PlayerContext';
 import DownloadManager, { DownloadedVideo } from '../services/DownloadManager';
 import VideoSkeleton from '../components/VideoSkeleton';
+import { FavoritesEmptyState, HistoryEmptyState, DownloadsEmptyState } from '../components/EmptyState';
 
 const LibraryScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
@@ -78,15 +79,8 @@ const LibraryScreen = ({ navigation }: any) => {
         </TouchableOpacity>
     );
 
-    const renderEmptyState = (icon: string, title: string, subtitle: string) => (
-        <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconContainer}>
-                <Ionicons name={icon as any} size={60} color={COLORS.textTertiary} />
-            </View>
-            <Text style={styles.emptyTitle}>{title}</Text>
-            <Text style={styles.emptySubtitle}>{subtitle}</Text>
-        </View>
-    );
+    // Empty states now use the new EmptyState component
+    const goToHome = () => navigation.navigate('HomeTab');
 
     const renderVideoList = (videos: any[]) => (
         videos.map((video, index) => (
@@ -181,28 +175,22 @@ const LibraryScreen = ({ navigation }: any) => {
                 {activeTab === 'favorites' && (
                     loading && favorites.length === 0 ? (
                         <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>
-                    ) : favorites.length > 0 ? renderVideoList(favorites) : renderEmptyState(
-                        'heart-outline',
-                        'Chưa có video yêu thích',
-                        'Nhấn ❤️ khi xem video để thêm vào đây'
+                    ) : favorites.length > 0 ? renderVideoList(favorites) : (
+                        <FavoritesEmptyState onExplore={goToHome} />
                     )
                 )}
 
                 {activeTab === 'history' && (
                     loading && history.length === 0 ? (
                         <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>
-                    ) : history.length > 0 ? renderVideoList(history) : renderEmptyState(
-                        'time-outline',
-                        'Chưa có lịch sử xem',
-                        'Video bạn xem sẽ xuất hiện ở đây'
+                    ) : history.length > 0 ? renderVideoList(history) : (
+                        <HistoryEmptyState />
                     )
                 )}
 
                 {activeTab === 'downloads' && (
-                    downloads.length > 0 ? renderVideoList(downloads) : renderEmptyState(
-                        'download-outline',
-                        'Chưa có video đã tải',
-                        'Tải video để xem offline'
+                    downloads.length > 0 ? renderVideoList(downloads) : (
+                        <DownloadsEmptyState onBrowse={goToHome} />
                     )
                 )}
 

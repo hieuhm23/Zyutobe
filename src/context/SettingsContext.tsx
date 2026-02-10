@@ -7,11 +7,13 @@ interface SettingsContextType {
     autoPiP: boolean;
     videoQuality: string;
     region: string;
+    audioOnlyMode: boolean;
     toggleAutoPlay: () => void;
     toggleBackgroundPlay: () => void;
     toggleAutoPiP: () => void;
     setVideoQuality: (quality: string) => void;
     setRegion: (region: string) => void;
+    toggleAudioOnlyMode: () => void;
     sponsorBlockEnabled: boolean;
     toggleSponsorBlock: () => void;
     clearCache: () => Promise<{ success: boolean; size: string }>;
@@ -26,6 +28,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     const [videoQuality, setVideoQualityState] = useState('720p');
     const [region, setRegionState] = useState('VN');
     const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState(true);
+    const [audioOnlyMode, setAudioOnlyMode] = useState(false); // Audio-only mode - tiết kiệm data
 
     useEffect(() => {
         loadSettings();
@@ -33,7 +36,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
     const loadSettings = async () => {
         try {
-            const keys = ['setting_autoPlay', 'setting_backgroundPlay', 'setting_autoPiP', 'setting_videoQuality', 'setting_region', 'setting_sponsorBlockEnabled'];
+            const keys = ['setting_autoPlay', 'setting_backgroundPlay', 'setting_autoPiP', 'setting_videoQuality', 'setting_region', 'setting_sponsorBlockEnabled', 'setting_audioOnlyMode'];
             const stores = await AsyncStorage.multiGet(keys);
 
             const valAutoPlay = stores[0][1];
@@ -42,6 +45,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             const valQuality = stores[3][1];
             const valRegion = stores[4][1];
             const valSponsorBlock = stores[5][1];
+            const valAudioOnly = stores[6][1];
 
             if (valAutoPlay !== null) setAutoPlay(valAutoPlay === 'true');
             if (valBgPlay !== null) setBackgroundPlay(valBgPlay === 'true');
@@ -49,6 +53,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             if (valQuality !== null) setVideoQualityState(valQuality);
             if (valRegion !== null) setRegionState(valRegion);
             if (valSponsorBlock !== null) setSponsorBlockEnabled(valSponsorBlock === 'true');
+            if (valAudioOnly !== null) setAudioOnlyMode(valAudioOnly === 'true');
 
         } catch (e) {
             console.error("Failed to load settings", e);
@@ -89,6 +94,12 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
         await AsyncStorage.setItem('setting_sponsorBlockEnabled', String(newValue));
     };
 
+    const toggleAudioOnlyMode = async () => {
+        const newValue = !audioOnlyMode;
+        setAudioOnlyMode(newValue);
+        await AsyncStorage.setItem('setting_audioOnlyMode', String(newValue));
+    };
+
     const clearCache = async (): Promise<{ success: boolean; size: string }> => {
         try {
             const allKeys = await AsyncStorage.getAllKeys();
@@ -112,11 +123,13 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             autoPiP,
             videoQuality,
             region,
+            audioOnlyMode,
             toggleAutoPlay,
             toggleBackgroundPlay,
             toggleAutoPiP,
             setVideoQuality,
             setRegion,
+            toggleAudioOnlyMode,
             sponsorBlockEnabled,
             toggleSponsorBlock,
             clearCache

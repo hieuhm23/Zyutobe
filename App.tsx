@@ -5,6 +5,8 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { PlayerProvider } from './src/context/PlayerContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { PremiumProvider } from './src/context/PremiumContext';
+import { TabBarProvider } from './src/context/TabBarContext';
+import { AuthProvider } from './src/context/AuthContext';
 import GlobalPlayer from './src/components/GlobalPlayer';
 import UpdateModal from './src/components/UpdateModal';
 import NetworkStatus from './src/components/NetworkStatus';
@@ -86,19 +88,23 @@ export default function App() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <PremiumProvider>
-          <SettingsProvider>
-            <PlayerProvider>
-              <AppNavigator />
+          <AuthProvider>
+            <SettingsProvider>
+              <PlayerProvider>
+                <TabBarProvider>
+                  <AppNavigator />
+                </TabBarProvider>
 
-              {/* Update Modal - shows when new version available */}
-              <UpdateModal
-                visible={showUpdateModal}
-                onDismiss={() => setShowUpdateModal(false)}
-                forceUpdate={false}
-              />
-              <NetworkStatus />
-            </PlayerProvider>
-          </SettingsProvider>
+                {/* Update Modal - shows when new version available */}
+                <UpdateModal
+                  visible={showUpdateModal}
+                  onDismiss={() => setShowUpdateModal(false)}
+                  forceUpdate={false}
+                />
+                <NetworkStatus />
+              </PlayerProvider>
+            </SettingsProvider>
+          </AuthProvider>
         </PremiumProvider>
       </ErrorBoundary>
     </SafeAreaProvider>

@@ -329,6 +329,95 @@ class PipedApi {
         return null;
     }
 
+    // --- AUDIO-ONLY MODE ---
+    // Get best audio stream for Audio-Only mode (saves bandwidth)
+    // OPTIMIZED: Uses Promise.race for faster loading
+    async getBestAudioUrl(videoId: string): Promise<StreamResult | null> {
+        console.log('🎵 Audio-Only: Starting parallel fetch...');
+
+        // Helper for Cobalt audio
+        const tryCobaltAudio = async (instance: string): Promise<StreamResult | null> => {
+            try {
+                const res = await fetchWithTimeout(instance, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: `https://www.youtube.com/watch?v=${videoId}`,
+                        isAudioOnly: true,
+                        aFormat: 'mp3',
+                        filenamePattern: 'basic'
+                    })
+                }, 4000); // Shorter timeout
+                const data = await res.json();
+                if (data.url) {
+                    console.log('✅ Audio-Only: Found via Cobalt');
+                    return {
+                        url: data.url,
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                    };
+                }
+            } catch (e) { }
+            return null;
+        };
+
+        // Helper for Piped audio
+        const tryPipedAudio = async (instance: string): Promise<StreamResult | null> => {
+            try {
+                const res = await fetchWithTimeout(`${instance}/streams/${videoId}`, {}, 3000);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.audioStreams && data.audioStreams.length > 0) {
+                        const sorted = data.audioStreams.sort((a: any, b: any) => {
+                            const aBitrate = parseInt(a.quality) || 0;
+                            const bBitrate = parseInt(b.quality) || 0;
+                            return bBitrate - aBitrate;
+                        });
+                        console.log('✅ Audio-Only: Found via Piped');
+                        return {
+                            url: sorted[0].url,
+                            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                        };
+                    }
+                }
+            } catch (e) { }
+            return null;
+        };
+
+        // Run all in parallel, return first success
+        const allPromises: Promise<StreamResult | null>[] = [
+            // Cobalt instances (faster for audio)
+            ...COBALT_INSTANCES.slice(0, 3).map(inst => tryCobaltAudio(inst)),
+            // Piped instances
+            ...PIPED_INSTANCES.slice(0, 4).map(inst => tryPipedAudio(inst))
+        ];
+
+        // Race: Return first successful result
+        const raceWithFilter = async (): Promise<StreamResult | null> => {
+            const results = await Promise.allSettled(allPromises);
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value) {
+                    return result.value;
+                }
+            }
+            return null;
+        };
+
+        // Set overall timeout of 5 seconds
+        const timeoutPromise = new Promise<StreamResult | null>((resolve) =>
+            setTimeout(() => resolve(null), 5000)
+        );
+
+        const result = await Promise.race([raceWithFilter(), timeoutPromise]);
+
+        if (result) {
+            return result;
+        }
+
+        // Fallback to video stream if audio not found
+        console.log('⚠️ Audio-Only: Fallback to video stream');
+        return this.getBestStreamUrl(videoId);
+    }
+
     async search(query: string): Promise<VideoItem[]> {
         // Fallback search using Piped
         const instances = [...PIPED_INSTANCES].sort(() => 0.5 - Math.random());
