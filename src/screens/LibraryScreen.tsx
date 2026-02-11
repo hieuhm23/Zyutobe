@@ -3,11 +3,15 @@ import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
+    View,
+    Text,
+    StyleSheet,
+    FlatList,
     TouchableOpacity,
     RefreshControl,
     Alert,
     StatusBar,
+    Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,13 +25,56 @@ import { usePlayer } from '../context/PlayerContext';
 import DownloadManager, { DownloadedVideo } from '../services/DownloadManager';
 import VideoSkeleton from '../components/VideoSkeleton';
 import { FavoritesEmptyState, HistoryEmptyState, DownloadsEmptyState } from '../components/EmptyState';
+import { useTabBar } from '../context/TabBarContext';
 
 const LibraryScreen = ({ navigation }: any) => {
     const insets = useSafeAreaInsets();
+    const { setTabBarVisible } = useTabBar();
     const [activeTab, setActiveTab] = useState<'favorites' | 'history' | 'downloads'>('favorites');
     const { favorites, history, loading, refreshLibrary, clearHistory, clearFavorites } = useLibrary();
     const [downloads, setDownloads] = useState<DownloadedVideo[]>([]);
     const { playVideo } = usePlayer();
+
+    // Scroll handling
+    const scrollOffset = React.useRef(0);
+    const lastScrollY = React.useRef(0);
+
+    const handleScroll = (e: any) => {
+        const currentOffset = e.nativeEvent.contentOffset.y;
+        const direction = currentOffset > scrollOffset.current ? 'down' : 'up';
+        const distance = Math.abs(currentOffset - scrollOffset.current);
+
+        // Vuốt lên > 10px -> Hiện ngay lập tức
+        if (direction === 'up' && distance > 10) {
+            setTabBarVisible(true);
+        }
+
+        // Ở gần top (< 50) -> Luôn hiện
+        if (currentOffset < 50) {
+            setTabBarVisible(true);
+        }
+
+        scrollOffset.current = currentOffset;
+    };
+
+    const handleScrollEndDrag = (e: any) => {
+        const currentOffset = e.nativeEvent.contentOffset.y;
+        const direction = currentOffset > lastScrollY.current ? 'down' : 'up';
+        const velocity = Math.abs(currentOffset - lastScrollY.current);
+
+        // Chỉ ẩn khi vuốt xuống rõ ràng (> 40px) và thả tay ra
+        if (velocity > 40 && direction === 'down' && currentOffset > 100) {
+            setTabBarVisible(false);
+        }
+
+        lastScrollY.current = currentOffset;
+    };
+
+    const handleMomentumScrollEnd = (e: any) => {
+        const currentOffset = e.nativeEvent.contentOffset.y;
+        if (currentOffset <= 0) setTabBarVisible(true);
+        lastScrollY.current = currentOffset;
+    };
 
     const loadDownloads = async () => {
         const data = await DownloadManager.getDownloads();
@@ -82,55 +129,72 @@ const LibraryScreen = ({ navigation }: any) => {
     // Empty states now use the new EmptyState component
     const goToHome = () => navigation.navigate('HomeTab');
 
-    const renderVideoList = (videos: any[]) => (
-        videos.map((video, index) => (
-            <TouchableOpacity
-                key={index + video.url}
-                style={styles.videoCard}
-                onPress={() => {
-                    if (activeTab === 'downloads') {
-                        // Play local file
-                        playVideo({
-                            ...video,
-                            url: (video as DownloadedVideo).localUri || video.url,
-                            isLocal: true
-                        });
-                    } else {
-                        playVideo(video);
-                    }
-                }}
-                activeOpacity={0.8}
-            >
-                <View style={styles.thumbnailContainer}>
-                    <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} contentFit="cover" transition={500} />
-                    <View style={styles.durationBadge}>
-                        <Text style={styles.durationText}>
-                            {youtubeApi.formatDuration(Number(video.duration) || 0)}
-                        </Text>
-                    </View>
+    const renderVideoItem = ({ item }: { item: any }) => (
+        <TouchableOpacity
+            style={styles.videoCard}
+            onPress={() => {
+                if (activeTab === 'downloads') {
+                    // Play local file
+                    playVideo({
+                        ...item,
+                        url: (item as DownloadedVideo).localUri || item.url,
+                        isLocal: true
+                    });
+                } else {
+                    playVideo(item);
+                }
+            }}
+            activeOpacity={0.8}
+        >
+            <View style={styles.thumbnailContainer}>
+                <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} contentFit="cover" transition={500} />
+                <View style={styles.durationBadge}>
+                    <Text style={styles.durationText}>
+                        {youtubeApi.formatDuration(Number(item.duration) || 0)}
+                    </Text>
                 </View>
-                <View style={styles.videoInfo}>
-                    <Image
-                        source={{ uri: video.uploaderAvatar || 'https://via.placeholder.com/40' }}
-                        style={styles.channelAvatar}
-                        contentFit="cover"
-                        transition={500}
-                    />
-                    <View style={styles.textContainer}>
-                        <Text style={styles.videoTitle} numberOfLines={2}>{video.title}</Text>
-                        <Text style={styles.channelName}>
-                            {video.uploaderName} • {activeTab === 'downloads' ? 'Đã tải xuống' : pipedApi.formatViews(video.views || 0)}
-                        </Text>
-                    </View>
-                    {activeTab === 'downloads' && (
-                        <TouchableOpacity style={{ padding: 10 }} onPress={() => handleDeleteDownload(video)}>
-                            <Ionicons name="trash-outline" size={20} color={COLORS.error} />
-                        </TouchableOpacity>
-                    )}
+            </View>
+            <View style={styles.videoInfo}>
+                <Image
+                    source={{ uri: item.uploaderAvatar || 'https://via.placeholder.com/40' }}
+                    style={styles.channelAvatar}
+                    contentFit="cover"
+                    transition={500}
+                />
+                <View style={styles.textContainer}>
+                    <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
+                    <Text style={styles.channelName}>
+                        {item.uploaderName} • {activeTab === 'downloads' ? 'Đã tải xuống' : pipedApi.formatViews(item.views || 0)}
+                    </Text>
                 </View>
-            </TouchableOpacity>
-        ))
+                {activeTab === 'downloads' && (
+                    <TouchableOpacity style={{ padding: 10 }} onPress={() => handleDeleteDownload(item)}>
+                        <Ionicons name="trash-outline" size={20} color={COLORS.error} />
+                    </TouchableOpacity>
+                )}
+            </View>
+        </TouchableOpacity>
     );
+
+    const getActiveData = () => {
+        switch (activeTab) {
+            case 'favorites': return favorites;
+            case 'history': return history;
+            case 'downloads': return downloads;
+            default: return [];
+        }
+    };
+
+    const EmptyComponent = () => {
+        if (loading) return <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>;
+
+        switch (activeTab) {
+            case 'favorites': return <FavoritesEmptyState onExplore={goToHome} />;
+            case 'history': return <HistoryEmptyState />;
+            case 'downloads': return <DownloadsEmptyState onBrowse={goToHome} />;
+            default: return null;
+        }
+    };
 
     const handleDeleteDownload = (video: DownloadedVideo) => {
         Alert.alert('Xóa video', `Bạn muốn xóa video "${video.title}"?`, [
@@ -165,37 +229,36 @@ const LibraryScreen = ({ navigation }: any) => {
                 {renderTab('downloads', 'Đã tải', 'download')}
             </View>
 
-            <ScrollView
-                style={styles.content}
+            <FlatList
+                key={activeTab} // Force remount when tab changes
+                data={getActiveData()}
+                renderItem={renderVideoItem}
+                keyExtractor={(item, index) => item.url + index}
+                contentContainerStyle={{ paddingBottom: 100 }}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl refreshing={loading} onRefresh={refreshLibrary} tintColor={COLORS.primary} />
                 }
-            >
-                {activeTab === 'favorites' && (
-                    loading && favorites.length === 0 ? (
-                        <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>
-                    ) : favorites.length > 0 ? renderVideoList(favorites) : (
-                        <FavoritesEmptyState onExplore={goToHome} />
-                    )
-                )}
+                ListEmptyComponent={EmptyComponent}
 
-                {activeTab === 'history' && (
-                    loading && history.length === 0 ? (
-                        <View style={{ paddingTop: 10 }}>{[1, 2, 3].map(i => <VideoSkeleton key={i} />)}</View>
-                    ) : history.length > 0 ? renderVideoList(history) : (
-                        <HistoryEmptyState />
-                    )
-                )}
+                // Scroll handling for TabBar visibility
+                onScroll={handleScroll}
+                onScrollEndDrag={handleScrollEndDrag}
+                onMomentumScrollEnd={handleMomentumScrollEnd}
+                scrollEventThrottle={16}
 
-                {activeTab === 'downloads' && (
-                    downloads.length > 0 ? renderVideoList(downloads) : (
-                        <DownloadsEmptyState onBrowse={goToHome} />
-                    )
-                )}
-
-                <View style={{ height: 100 }} />
-            </ScrollView>
+                // Performance optimizations
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={5}
+                windowSize={7}
+                initialNumToRender={4}
+                updateCellsBatchingPeriod={50}
+                getItemLayout={(data, index) => ({
+                    length: 280, // Approximate height of video card
+                    offset: 280 * index,
+                    index,
+                })}
+            />
         </View>
     );
 };

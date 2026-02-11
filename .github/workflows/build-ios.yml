@@ -24,63 +24,56 @@ jobs:
         run: |
           npm cache clean --force
           rm -rf node_modules
-          rm -rf ios
+          rm -rf ios/Pods
           rm -rf ~/Library/Developer/Xcode/DerivedData
 
       - name: 📦 Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: 🔨 Prebuild iOS
         run: npx expo prebuild --platform ios --clean
         env:
           EAS_NO_VCS: 1
-          EAS_PROJECT_ID: f51c630a-f698-412b-94cc-a6e7b45bb054
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 💾 Cache CocoaPods
+        uses: actions/cache@v3
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
 
       - name: 📦 Install CocoaPods
         run: |
           cd ios
           pod install --repo-update
 
-      - name: 🔧 Force Remove Signing (Aggressive)
-        run: |
-          cd ios
-          # Xóa sạch các thiết lập Signing
-          find . -name "project.pbxproj" -exec sed -i '' '/CODE_SIGN_IDENTITY/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/DEVELOPMENT_TEAM/d' {} +
-          find . -name "project.pbxproj" -exec sed -i '' '/PROVISIONING_PROFILE_SPECIFIER/d' {} +
-          
-          # Tắt bắt buộc Signing
-          find . -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGNING_REQUIRED = YES/CODE_SIGNING_REQUIRED = NO/g' {} +
-          find . -name "project.pbxproj" -exec sed -i '' 's/CODE_SIGNING_ALLOWED = YES/CODE_SIGNING_ALLOWED = NO/g' {} +
-
-      - name: 🔍 Find project info
-        id: project
-        run: |
-          cd ios
-          WORKSPACE=$(ls -d *.xcworkspace | head -1)
-          SCHEME=$(echo $WORKSPACE | sed 's/.xcworkspace//')
-          echo "workspace=$WORKSPACE" >> $GITHUB_OUTPUT
-          echo "scheme=$SCHEME" >> $GITHUB_OUTPUT
+      - name: 🔧 Install xcbeautify
+        run: brew install xcbeautify
 
       - name: 🚀 Build iOS App (No Sign)
         run: |
           cd ios
-          export NODE_OPTIONS="--max-old-space-size=8192"
-          export GENERATE_SOURCEMAP=false
           
-          xcodebuild \
-            -workspace "${{ steps.project.outputs.workspace }}" \
-            -scheme "${{ steps.project.outputs.scheme }}" \
+          # Tìm workspace và scheme tự động
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(echo $WORKSPACE | sed 's/.xcworkspace//')
+          
+          echo "Building $SCHEME in $WORKSPACE..."
+          
+          # Tắt code signing và build với log đẹp
+          set -o pipefail && xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            -allowProvisioningUpdates \
-            clean build
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            clean build | xcbeautify
 
       - name: 📦 Pack to IPA
         run: |
